@@ -331,7 +331,11 @@ model_list:
     litellm_params:
       model: ${LLM_MODELS[$primary_llm]}
       api_key: os.environ/${primary_llm^^}_API_KEY
-$(for llm in "${SELECTED_LLMS[@]}"; do
+$(if [[ "$primary_llm" == "GigaChat" ]]; then
+    echo "      ssl_verify: false"
+fi)
+$(for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
+    llm="${SELECTED_LLMS[$i]}"
     alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
     echo "  - model_name: ${alias_name}"
     echo "    litellm_params:"
@@ -570,6 +574,9 @@ for llm in "${SELECTED_LLMS[@]}"; do
     sub_header "$(msg title_api_key "$llm")"
     current_key=""
     ask "$(msg api_key_prompt "$llm")" current_key ""
+    if [[ -n "$current_key" ]]; then
+        printf "Entered API Key: %s\n" "$current_key" > /dev/tty
+    fi
     if [[ -z "$current_key" ]]; then
         warn_msg "$(msg api_key_skipped "$llm")"
         # Still store empty to keep associative lookups safe
