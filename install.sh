@@ -297,7 +297,7 @@ MAX_RETRIES=3
 
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
-DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat"
+DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2"
 DEFAULT_LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
 DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
 DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
