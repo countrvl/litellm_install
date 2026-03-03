@@ -22,10 +22,8 @@ LiteLLM будет настроен как системный сервис (`sys
 Для запуска инсталлятора выполните следующую команду в вашем терминале:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/<YOUR_GITHUB_USERNAME>/litellm-openclaw-installer/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/install.sh | sudo bash
 ```
-
-**Важно:** Замените `<YOUR_GITHUB_USERNAME>` на ваше имя пользователя GitHub.
 
 ### Шаги установки:
 
