@@ -19,16 +19,15 @@ LiteLLM will be configured as a `systemd` service, ensuring its automatic startu
     *   [OpenAI](https://platform.openai.com/docs/models)
     *   [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview)
     *   [DeepSeek](https://platform.deepseek.com/docs)
-*   **API Key Validation:** The script validates entered API keys immediately after input.
-*   **Network-Aware Validation:** API key checks include timeouts and report network errors.
+*   **Provider Credentials Input:** For GigaChat, enter Authorization Key (`base64(client_id:client_secret)`) as `GIGACHAT_CREDENTIALS`. For other providers, enter API keys.
+*   **OAuth-native GigaChat Mode:** LiteLLM handles OAuth token lifecycle internally for GigaChat in `v1.82.x`.
 *   **Retry Limits:** Invalid API keys and priority input are limited to 3 attempts.
 *   **Configurable LLM Priority (Fallback):** Define the order of LLM usage in case the primary model is unavailable.
 *   **LiteLLM Port Selection:** Specify the desired port for the LiteLLM Proxy.
-*   **Automatic Master Key Generation:** If not provided, the LiteLLM master key will be automatically generated.
 *   **Isolated Installation:** LiteLLM is installed in a Python virtual environment (`venv`).
 *   **Autostart:** LiteLLM is configured as a `systemd` service for automatic startup.
 *   **Optional OpenClaw Installation:** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
-*   **Management:** Supports `--update` flag for LiteLLM updates and `--uninstall` for complete removal.
+*   **Management:** Supports `--update` for LiteLLM updates and `--uninstall` for complete removal (service, installation files, `/etc/litellm`, system user/group `litellm`).
 
 ## Installation
 
@@ -42,12 +41,10 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 
 1.  **Run the script:** Execute the command above. The script will request `sudo` privileges.
 2.  **LiteLLM Port Selection:** Enter the desired port for LiteLLM (default `4000`).
-3.  **LiteLLM Master Key:** Enter the LiteLLM master key or press Enter for automatic generation.
-4.  **LLM Selection:** Choose the numbers of the LLMs you want to use (e.g., `1 2 4` for GigaChat, OpenAI, and DeepSeek).
-5.  **API Key Entry:** For each selected LLM, the script will prompt for the corresponding API keys and validate them.
-6.  **API Key Retries:** Invalid keys can be retried up to 3 times per provider; network errors are reported.
-7.  **Set Priorities:** If multiple LLMs are selected, the script will ask you to set their usage order (priority/fallback). Invalid input is limited to 3 attempts.
-8.  **OpenClaw Installation (optional):** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
+3.  **LLM Selection:** Choose the numbers of the LLMs you want to use (e.g., `1 2 4` for GigaChat, OpenAI, and DeepSeek).
+4.  **Credentials Entry:** For GigaChat, enter Authorization Key (`base64(client_id:client_secret)`). For other providers, enter API keys.
+5.  **Set Priorities:** If multiple LLMs are selected, the script will ask you to set their usage order (priority/fallback). Invalid input is limited to 3 attempts.
+6.  **OpenClaw Installation (optional):** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
 
 
 ## Usage
@@ -59,15 +56,48 @@ After successful installation, LiteLLM will be accessible at `http://localhost:<
 To connect OpenClaw to your LiteLLM Proxy, use the following parameters:
 
 *   **API Base:** `http://localhost:<YOUR_LITELLM_PORT>/openai/v1`
-*   **API Key:** `<YOUR_LITELLM_MASTER_KEY>`
+*   **API Key:** not required by this installer by default
 *   **Model:** `openclaw-brain` (this is a virtual model that uses your configured priority chain)
+
+### GigaChat OAuth Credentials (Default)
+
+For GigaChat, this installer uses LiteLLM native OAuth credentials mode:
+
+- `api_key: os.environ/GIGACHAT_CREDENTIALS`
+- expected value: `GIGACHAT_CREDENTIALS=<base64(client_id:client_secret)>`
+- runtime env file: `/etc/litellm/litellm.env`
+- no external token file/timer is required
+
+Operational note:
+
+- avoid aggressive `/health` polling (especially short intervals), since model-level probes can increase upstream OAuth pressure and cause `429 Too Many Requests`.
+- installer/update does not use `/health` as a success gate; service readiness is determined by `systemd` active state.
+
+Config generation is deterministic:
+
+- only one provider selected -> simple `model_list` without `router_settings`
+- only GigaChat additionally exposes alias `gigachat-2`
+- multi-provider selected -> aliases + `router_settings.fallbacks` only for existing aliases
 
 ### Update LiteLLM
 
-To update LiteLLM to the latest version:
+To update LiteLLM to version 1.81.12 or newer:
 
 ```bash
 sudo /opt/litellm/install.sh --update
+```
+
+### Diagnostics
+
+```bash
+sudo /opt/litellm/venv/bin/pip show litellm | grep -i '^Version'
+sudo systemctl status litellm --no-pager -l
+sudo grep -n "model: gigachat/GigaChat-2\\|api_key: os.environ/GIGACHAT_CREDENTIALS\\|router_settings" /opt/litellm/config/config.yaml
+sudo grep -n '^GIGACHAT_CREDENTIALS=' /etc/litellm/litellm.env
+curl -sS http://127.0.0.1:4000/openai/v1/models | jq .
+curl -sS http://127.0.0.1:4000/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openclaw-brain","messages":[{"role":"user","content":"reply with one word: ok"}],"max_tokens":8,"temperature":0}' | jq .
 ```
 
 ### Uninstall LiteLLM
@@ -78,9 +108,16 @@ To completely remove LiteLLM and all its components:
 sudo /opt/litellm/install.sh --uninstall
 ```
 
+`--uninstall` removes:
+- `litellm.service` (`systemd` stop/disable + unit file removal)
+- `/opt/litellm`
+- `/etc/litellm` (including `litellm.env`)
+- legacy refresh artifacts (`litellm-token-refresh.service`, `litellm-token-refresh.timer`, `/etc/litellm/tokens`, `/etc/litellm/gigachat.env`) if present
+- system user `litellm` and group `litellm` (if present)
+
 ## Supported LLMs
 
-*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
+*   **[GigaChat](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
 *   **[OpenAI (GPT-5-nano)](https://platform.openai.com/docs/models):** `openai/gpt-5-nano`
 *   **[Anthropic (Haiku 4.5)](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-haiku-4-5`
 *   **[DeepSeek (deepseek-chat)](https://platform.deepseek.com/docs):** `deepseek/deepseek-chat`
