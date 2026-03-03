@@ -39,6 +39,12 @@ EN_MESSAGES["api_key_invalid"]="Invalid API Key for %s. Please check it and try 
 EN_MESSAGES["api_key_skipped"]="API Key for %s skipped."
 EN_MESSAGES["api_key_network_error"]="API Key validation failed due to a network error. Please try again."
 EN_MESSAGES["api_key_retry"]="Too many invalid attempts for %s. Skipping."
+EN_MESSAGES["noninteractive_llms_required"]="Non-interactive mode requires --llms."
+EN_MESSAGES["noninteractive_llms_invalid"]="Invalid LLM in --llms: %s"
+EN_MESSAGES["noninteractive_key_required"]="Non-interactive mode requires API key for %s."
+EN_MESSAGES["noninteractive_key_invalid"]="API key validation failed for %s in non-interactive mode."
+EN_MESSAGES["noninteractive_priority_required"]="Non-interactive mode requires --priority when multiple LLMs are selected."
+EN_MESSAGES["openclaw_flag_invalid"]="Invalid --openclaw value. Use yes, no, or ask."
 EN_MESSAGES["priority_prompt"]="Enter the priority order for selected LLMs (e.g., 1 2 3 for %s): "
 EN_MESSAGES["priority_invalid"]="Invalid priority order. Please enter unique numbers for each selected LLM."
 EN_MESSAGES["priority_retry"]="Too many invalid attempts. Exiting."
@@ -88,6 +94,12 @@ RU_MESSAGES["api_key_invalid"]="Неверный API Key для %s. Провер
 RU_MESSAGES["api_key_skipped"]="API Key для %s пропущен."
 RU_MESSAGES["api_key_network_error"]="Проверка API Key не удалась из-за сетевой ошибки. Попробуйте снова."
 RU_MESSAGES["api_key_retry"]="Слишком много неверных попыток для %s. Пропускаю."
+RU_MESSAGES["noninteractive_llms_required"]="Для неинтерактивного режима нужен параметр --llms."
+RU_MESSAGES["noninteractive_llms_invalid"]="Неверная LLM в --llms: %s"
+RU_MESSAGES["noninteractive_key_required"]="Для неинтерактивного режима нужен API ключ для %s."
+RU_MESSAGES["noninteractive_key_invalid"]="Проверка API ключа не удалась для %s в неинтерактивном режиме."
+RU_MESSAGES["noninteractive_priority_required"]="Для неинтерактивного режима нужен --priority, если выбрано несколько LLM."
+RU_MESSAGES["openclaw_flag_invalid"]="Неверное значение --openclaw. Используйте yes, no или ask."
 RU_MESSAGES["priority_prompt"]="Введите порядок приоритета для выбранных LLM (например, 1 2 3 для %s): "
 RU_MESSAGES["priority_invalid"]="Неверный порядок приоритета. Введите уникальные номера для каждой выбранной LLM."
 RU_MESSAGES["priority_retry"]="Слишком много неверных попыток. Выход."
@@ -135,14 +147,23 @@ if [[ ! -w "$(dirname "$log_file")" ]]; then
 fi
 
 info_msg() {
+    if [[ -z "$1" ]]; then
+        return
+    fi
     echo -e "\e[32m[INFO]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"
 }
 
 warn_msg() {
+    if [[ -z "$1" ]]; then
+        return
+    fi
     echo -e "\e[33m[WARN]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"
 }
 
 error_msg() {
+    if [[ -z "$1" ]]; then
+        return
+    fi
     echo -e "\e[31m[ERROR]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"
 }
 
@@ -165,6 +186,22 @@ read_prompt() {
     local __var="$2"
     printf "\n%s" "$prompt" > /dev/tty
     IFS= read -r "$__var" < /dev/tty
+}
+
+announce_input() {
+    local message="$1"
+    info_msg "$message"
+    printf "\n%s\n" "$message" > /dev/tty
+}
+
+normalize_llm_name() {
+    case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+        gigachat) echo "GigaChat" ;;
+        openai) echo "OpenAI" ;;
+        anthropic) echo "Anthropic" ;;
+        deepseek) echo "DeepSeek" ;;
+        *) echo "" ;;
+    esac
 }
 
 # Parse command line arguments for language
@@ -203,6 +240,50 @@ OPENCLAW_INSTALL_SCRIPT="https://raw.githubusercontent.com/openclaw/openclaw/mai
 LITELLM_PORT=4000
 LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
+NON_INTERACTIVE=0
+OPENCLAW_INSTALL="ask"
+LLMS_ARG=""
+PRIORITY_ARG=""
+OPENAI_API_KEY_ARG=""
+ANTHROPIC_API_KEY_ARG=""
+DEEPSEEK_API_KEY_ARG=""
+GIGACHAT_API_KEY_ARG=""
+
+# Parse other command line arguments
+for arg in "$@"; do
+    case $arg in
+        --non-interactive)
+            NON_INTERACTIVE=1
+            ;;
+        --port=*)
+            LITELLM_PORT="${arg#*=}"
+            ;;
+        --master-key=*)
+            LITELLM_MASTER_KEY="${arg#*=}"
+            ;;
+        --llms=*)
+            LLMS_ARG="${arg#*=}"
+            ;;
+        --priority=*)
+            PRIORITY_ARG="${arg#*=}"
+            ;;
+        --openclaw=*)
+            OPENCLAW_INSTALL="${arg#*=}"
+            ;;
+        --openai-key=*)
+            OPENAI_API_KEY_ARG="${arg#*=}"
+            ;;
+        --anthropic-key=*)
+            ANTHROPIC_API_KEY_ARG="${arg#*=}"
+            ;;
+        --deepseek-key=*)
+            DEEPSEEK_API_KEY_ARG="${arg#*=}"
+            ;;
+        --gigachat-key=*)
+            GIGACHAT_API_KEY_ARG="${arg#*=}"
+            ;;
+    esac
+done
 
 # API Endpoints for validation
 OPENAI_VALIDATION_URL="https://api.openai.com/v1/models"
@@ -342,29 +423,44 @@ fi
 info_msg "$(msg dependencies_install)"
 sudo apt update -y || error_exit "$(msg dependencies_error)"
 sudo apt install -y python3-venv git curl jq || error_exit "$(msg dependencies_error)"
-info_msg "Dependencies installed. Waiting for input..."
+info_msg "Dependencies installed."
 
 # 4. Prompt for LiteLLM Port
 while true; do
-    port_prompt_msg=$(msg port_prompt)
-    info_msg "Input required: LiteLLM port (press Enter for default)."
-    read_prompt "$port_prompt_msg" input_port
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        input_port="$LITELLM_PORT"
+    else
+        port_prompt_msg=$(msg port_prompt)
+        announce_input "Input required: LiteLLM port (press Enter for default)."
+        read_prompt "$port_prompt_msg" input_port
+    fi
+
     LITELLM_PORT=${input_port:-4000}
 
     if ! [[ "$LITELLM_PORT" =~ ^[0-9]+$ ]] || (( LITELLM_PORT < 1024 || LITELLM_PORT > 65535 )); then
         error_msg "$(msg port_invalid)"
+        if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+            error_exit "$(msg port_invalid)"
+        fi
     elif is_port_in_use "$LITELLM_PORT"; then
         port_in_use_msg=$(msg port_in_use "$LITELLM_PORT")
         error_msg "$port_in_use_msg"
+        if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+            error_exit "$port_in_use_msg"
+        fi
     else
         break
     fi
 done
 
 # 5. Prompt for LiteLLM Master Key
-master_key_prompt_msg=$(msg master_key_prompt)
-info_msg "Input required: LiteLLM master key (press Enter to auto-generate)."
-read_prompt "$master_key_prompt_msg" LITELLM_MASTER_KEY
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY"
+else
+    master_key_prompt_msg=$(msg master_key_prompt)
+    announce_input "Input required: LiteLLM master key (press Enter to auto-generate)."
+    read_prompt "$master_key_prompt_msg" LITELLM_MASTER_KEY
+fi
 if [[ -z "$LITELLM_MASTER_KEY" ]]; then
     LITELLM_MASTER_KEY=$(generate_random_string)
     master_key_msg=$(msg master_key_generated "$LITELLM_MASTER_KEY")
@@ -384,7 +480,7 @@ select_llms() {
     for i in "${!LLM_OPTIONS[@]}"; do
         echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
     done
-    info_msg "Input required: select LLMs by number (e.g., 1 3)."
+    announce_input "Input required: select LLMs by number (e.g., 1 3)."
     read_prompt "Enter numbers separated by spaces (e.g. 1 3): " selection_input
 
     for idx in $selection_input; do
@@ -403,7 +499,24 @@ select_llms() {
     done
 }
 
-select_llms
+if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    if [[ -z "$LLMS_ARG" ]]; then
+        error_exit "$(msg noninteractive_llms_required)"
+    fi
+    IFS=',' read -r -a llm_items <<< "$LLMS_ARG"
+    for raw_item in "${llm_items[@]}"; do
+        item=$(echo "$raw_item" | sed 's/^ *//;s/ *$//')
+        normalized=$(normalize_llm_name "$item")
+        if [[ -z "$normalized" ]]; then
+            error_exit "$(msg noninteractive_llms_invalid "$raw_item")"
+        fi
+        if [[ " ${SELECTED_LLMS[*]} " != *" $normalized "* ]]; then
+            SELECTED_LLMS+=( "$normalized" )
+        fi
+    done
+else
+    select_llms
+fi
 
 if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     warn_msg "$(msg llm_none_selected)"
@@ -416,50 +529,119 @@ else
     LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
     LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
 
-    for llm in "${SELECTED_LLMS[@]}"; do
-        validation_url=""
-        case "$llm" in
-            "GigaChat") validation_url="$GIGACHAT_VALIDATION_URL" ;;
-            "OpenAI") validation_url="$OPENAI_VALIDATION_URL" ;;
-            "Anthropic") validation_url="$ANTHROPIC_VALIDATION_URL" ;;
-            "DeepSeek") validation_url="$DEEPSEEK_VALIDATION_URL" ;;
-        esac
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        for llm in "${SELECTED_LLMS[@]}"; do
+            validation_url=""
+            current_key=""
+            case "$llm" in
+                "GigaChat")
+                    validation_url="$GIGACHAT_VALIDATION_URL"
+                    current_key="$GIGACHAT_API_KEY_ARG"
+                    ;;
+                "OpenAI")
+                    validation_url="$OPENAI_VALIDATION_URL"
+                    current_key="$OPENAI_API_KEY_ARG"
+                    ;;
+                "Anthropic")
+                    validation_url="$ANTHROPIC_VALIDATION_URL"
+                    current_key="$ANTHROPIC_API_KEY_ARG"
+                    ;;
+                "DeepSeek")
+                    validation_url="$DEEPSEEK_VALIDATION_URL"
+                    current_key="$DEEPSEEK_API_KEY_ARG"
+                    ;;
+            esac
 
-        retry_count=0
-        while true; do
-            api_key_prompt_msg=$(msg api_key_prompt "$llm")
-            info_msg "Input required: API key for $llm (press Enter to skip)."
-            read_prompt "$api_key_prompt_msg" current_key
             if [[ -z "$current_key" ]]; then
-                api_key_skipped_msg=$(msg api_key_skipped "$llm")
-                warn_msg "$api_key_skipped_msg"
-                break
+                error_exit "$(msg noninteractive_key_required "$llm")"
             fi
 
             if validate_api_key "$llm" "$current_key" "$validation_url"; then
                 LLM_API_KEYS["$llm"]="$current_key"
-                break
             else
-                api_key_invalid_msg=$(msg api_key_invalid "$llm")
-                error_msg "$api_key_invalid_msg"
-                retry_count=$((retry_count + 1))
-                if (( retry_count >= MAX_RETRIES )); then
-                    api_key_retry_msg=$(msg api_key_retry "$llm")
-                    warn_msg "$api_key_retry_msg"
-                    break
-                fi
+                error_exit "$(msg noninteractive_key_invalid "$llm")"
             fi
         done
-    done
+    else
+        for llm in "${SELECTED_LLMS[@]}"; do
+            validation_url=""
+            case "$llm" in
+                "GigaChat") validation_url="$GIGACHAT_VALIDATION_URL" ;;
+                "OpenAI") validation_url="$OPENAI_VALIDATION_URL" ;;
+                "Anthropic") validation_url="$ANTHROPIC_VALIDATION_URL" ;;
+                "DeepSeek") validation_url="$DEEPSEEK_VALIDATION_URL" ;;
+            esac
+
+            retry_count=0
+            while true; do
+                api_key_prompt_msg=$(msg api_key_prompt "$llm")
+                announce_input "Input required: API key for $llm (press Enter to skip)."
+                read_prompt "$api_key_prompt_msg" current_key
+                if [[ -z "$current_key" ]]; then
+                    api_key_skipped_msg=$(msg api_key_skipped "$llm")
+                    warn_msg "$api_key_skipped_msg"
+                    break
+                fi
+
+                if validate_api_key "$llm" "$current_key" "$validation_url"; then
+                    LLM_API_KEYS["$llm"]="$current_key"
+                    break
+                else
+                    api_key_invalid_msg=$(msg api_key_invalid "$llm")
+                    error_msg "$api_key_invalid_msg"
+                    retry_count=$((retry_count + 1))
+                    if (( retry_count >= MAX_RETRIES )); then
+                        api_key_retry_msg=$(msg api_key_retry "$llm")
+                        warn_msg "$api_key_retry_msg"
+                        break
+                    fi
+                fi
+            done
+        done
+    fi
 
     # 8. Determine LLM Priority
     if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
+        if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+            if [[ -z "$PRIORITY_ARG" ]]; then
+                error_exit "$(msg noninteractive_priority_required)"
+            fi
+            priority_input=$(echo "$PRIORITY_ARG" | tr ',' ' ')
+            IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_input"
+            if [[ ${#PRIORITY_ORDER[@]} -ne ${#SELECTED_LLMS[@]} ]]; then
+                error_exit "$(msg priority_invalid)"
+            fi
+
+            declare -A seen_order=()
+            valid_order=1
+            for order in "${PRIORITY_ORDER[@]}"; do
+                if ! [[ "$order" =~ ^[0-9]+$ ]] || (( order < 1 || order > ${#SELECTED_LLMS[@]} )); then
+                    valid_order=0
+                    break
+                fi
+                if [[ -n "${seen_order[$order]}" ]]; then
+                    valid_order=0
+                    break
+                fi
+                seen_order[$order]=1
+            done
+
+            if [[ "$valid_order" -ne 1 ]]; then
+                error_exit "$(msg priority_invalid)"
+            fi
+
+            reordered_llms=()
+            for order in "${PRIORITY_ORDER[@]}"; do
+                reordered_llms+=( "${SELECTED_LLMS[$((order - 1))]}" )
+            done
+            SELECTED_LLMS=( "${reordered_llms[@]}" )
+        else
         selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
         priority_prompt_msg=$(msg priority_prompt "$selected_list")
-        info_msg "$priority_prompt_msg"
+        announce_input "$priority_prompt_msg"
         priority_retries=0
         while true; do
-            info_msg "Input required: priority order numbers (e.g., 2 1)."
+            announce_input "Input required: priority order numbers (e.g., 2 1)."
             read_prompt "" priority_order_input
             IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_order_input"
 
@@ -503,6 +685,7 @@ else
             SELECTED_LLMS=( "${reordered_llms[@]}" )
             break
         done
+        fi
     fi
 
     # 9. Install LiteLLM
@@ -600,9 +783,28 @@ EOF
     echo "----------------------------------------"
 
     # 14. Optional OpenClaw Installation
-    openclaw_prompt_msg=$(msg openclaw_install_prompt)
-    info_msg "Input required: install OpenClaw? (y/n)."
-    read_prompt "$openclaw_prompt_msg" install_oc
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        openclaw_value=$(echo "$OPENCLAW_INSTALL" | tr '[:upper:]' '[:lower:]')
+        case "$openclaw_value" in
+            yes|y|true)
+                install_oc="y"
+                ;;
+            no|n|false|"")
+                install_oc="n"
+                ;;
+            ask)
+                install_oc="n"
+                ;;
+            *)
+                error_exit "$(msg openclaw_flag_invalid)"
+                ;;
+        esac
+    else
+        openclaw_prompt_msg=$(msg openclaw_install_prompt)
+        announce_input "Input required: install OpenClaw? (y/n)."
+        read_prompt "$openclaw_prompt_msg" install_oc
+    fi
+
     if [[ "$install_oc" =~ ^[Yy]$ ]]; then
         info_msg "$(msg openclaw_install_start)"
         exec curl -sSL ${OPENCLAW_INSTALL_SCRIPT} | sudo bash

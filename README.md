@@ -49,6 +49,29 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 7.  **Set Priorities:** If multiple LLMs are selected, the script will ask you to set their usage order (priority/fallback). Invalid input is limited to 3 attempts.
 8.  **OpenClaw Installation (optional):** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
 
+### Non-interactive Usage
+
+Use flags to avoid prompts:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/install.sh | sudo bash -s -- \
+  --non-interactive \
+  --port=4000 \
+  --master-key=YOUR_MASTER_KEY \
+  --llms=OpenAI,DeepSeek \
+  --priority="1 2" \
+  --openai-key=YOUR_OPENAI_KEY \
+  --deepseek-key=YOUR_DEEPSEEK_KEY \
+  --openclaw=no
+```
+
+Flags:
+* `--non-interactive` enables non-interactive mode.
+* `--llms` accepts a comma-separated list: `GigaChat,OpenAI,Anthropic,DeepSeek`.
+* `--priority` is required when multiple LLMs are selected.
+* Provider keys: `--openai-key`, `--anthropic-key`, `--deepseek-key`, `--gigachat-key`.
+* `--openclaw` accepts `yes`, `no`, or `ask`.
+
 ## Usage
 
 After successful installation, LiteLLM will be accessible at `http://localhost:<YOUR_LITELLM_PORT>`.
