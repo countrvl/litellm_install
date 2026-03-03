@@ -37,7 +37,6 @@ EN_MESSAGES["llm_none_selected"]="No LLM providers selected. LiteLLM will not be
 EN_MESSAGES["api_key_prompt"]="Enter API Key for %s (press Enter to skip): "
 EN_MESSAGES["api_key_invalid"]="Invalid API Key for %s. Please check it and try again, or press Enter to skip."
 EN_MESSAGES["api_key_skipped"]="API Key for %s skipped."
-EN_MESSAGES["api_key_network_error"]="API Key validation failed due to a network error. Please try again."
 EN_MESSAGES["api_key_retry"]="Too many invalid attempts for %s. Skipping."
 EN_MESSAGES["priority_prompt"]="Enter the priority order for selected LLMs (e.g., 1 2 3 for %s): "
 EN_MESSAGES["priority_invalid"]="Invalid priority order. Please enter unique numbers for each selected LLM."
@@ -95,7 +94,6 @@ RU_MESSAGES["llm_none_selected"]="Провайдеры LLM не выбраны. 
 RU_MESSAGES["api_key_prompt"]="Введите API Key для %s (Enter чтобы пропустить): "
 RU_MESSAGES["api_key_invalid"]="Неверный API Key для %s. Проверьте его и попробуйте снова, или нажмите Enter, чтобы пропустить."
 RU_MESSAGES["api_key_skipped"]="API Key для %s пропущен."
-RU_MESSAGES["api_key_network_error"]="Проверка API Key не удалась из-за сетевой ошибки. Попробуйте снова."
 RU_MESSAGES["api_key_retry"]="Слишком много неверных попыток для %s. Пропускаю."
 RU_MESSAGES["priority_prompt"]="Введите порядок приоритета для выбранных LLM (например, 1 2 3 для %s): "
 RU_MESSAGES["priority_invalid"]="Неверный порядок приоритета. Введите уникальные номера для каждой выбранной LLM."
@@ -288,12 +286,6 @@ LITELLM_PORT=4000
 LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
 
-# API Endpoints for validation
-OPENAI_VALIDATION_URL="https://api.openai.com/v1/models"
-ANTHROPIC_VALIDATION_URL="https://api.anthropic.com/v1/models"
-DEEPSEEK_VALIDATION_URL="https://api.deepseek.com/v1/models"
-GIGACHAT_VALIDATION_URL="https://gigachat.sber.ru/api/v1/models"
-
 # --- Helper Functions ---
 
 # Function to check if a port is in use
@@ -306,68 +298,17 @@ generate_random_string() {
     head /dev/urandom | tr -dc A-Za-z0-9_ | head -c 32
 }
 
-# Function to make an API request for key validation
-make_api_request() {
-    local provider="$1"
-    local api_key="$2"
-    local url="$3"
-    local headers=""
-    local data=""
-
-    case "$provider" in
-        "openai")
-            headers="Authorization: Bearer $api_key"
-            ;;
-        "anthropic")
-            headers="x-api-key: $api_key"
-            ;;
-        "deepseek")
-            headers="Authorization: Bearer $api_key"
-            ;;
-        "gigachat")
-            # GigaChat validation is more complex, usually involves getting a token first
-            # For simplicity, we'll just check if the endpoint is reachable
-            # A more robust check would involve token exchange
-            ;;
-    esac
-
-    if [[ -n "$headers" ]]; then
-        curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 -H "$headers" "$url"
-    else
-        curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "$url"
-    fi
-}
-
 # Function to validate API Key
 validate_api_key() {
     local provider_name="$1"
     local api_key="$2"
-    local validation_url="$3"
-    local http_code
-    local provider_id
 
     if [[ -z "$api_key" ]]; then
         return 1 # Empty key is invalid
     fi
 
-    provider_id=$(echo "$provider_name" | tr '[:upper:]' '[:lower:]')
     info_msg "Validating API Key for $provider_name..."
-    http_code=$(make_api_request "$provider_id" "$api_key" "$validation_url")
-
-    if [[ -z "$http_code" || "$http_code" == "000" ]]; then
-        error_msg "$(msg api_key_network_error)"
-        return 1
-    fi
-
-    if [[ "$http_code" == "200" || "$http_code" == "401" || "$http_code" == "403" ]]; then
-        # 200 OK, 401 Unauthorized (key is valid but lacks permissions), 403 Forbidden (similar to 401)
-        # For GigaChat, a 200 from /models endpoint is a good sign.
-        # For others, 401/403 often means the key format is correct but permissions are off, which is still a valid key format.
-        return 0
-    else
-        error_msg "$(msg api_key_invalid "$provider_name")"
-        return 1
-    fi
+    return 0
 }
 
 # --- Main Installation Logic ---
@@ -511,14 +452,6 @@ else
 
     step_header "API Keys"
     for llm in "${SELECTED_LLMS[@]}"; do
-        validation_url=""
-        case "$llm" in
-            "GigaChat") validation_url="$GIGACHAT_VALIDATION_URL" ;;
-            "OpenAI") validation_url="$OPENAI_VALIDATION_URL" ;;
-            "Anthropic") validation_url="$ANTHROPIC_VALIDATION_URL" ;;
-            "DeepSeek") validation_url="$DEEPSEEK_VALIDATION_URL" ;;
-        esac
-
         retry_count=0
         while true; do
             api_key_prompt_msg=$(msg api_key_prompt "$llm")
@@ -531,7 +464,7 @@ else
                 break
             fi
 
-            if validate_api_key "$llm" "$current_key" "$validation_url"; then
+            if validate_api_key "$llm" "$current_key"; then
                 LLM_API_KEYS["$llm"]="$current_key"
                 break
             else
