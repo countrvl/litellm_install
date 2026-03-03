@@ -61,6 +61,8 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 
 ### GigaChat OAuth + файл токена
 
+TLS note: в текущей версии установщик использует insecure TLS режим (`--insecure`) для OAuth GigaChat в средах с self-signed цепочками. Это снижает защиту от MITM; для production рекомендуется перейти на custom CA verification.
+
 Для GigaChat установщик использует OAuth и хранит runtime-токен в файле:
 
 - runtime env для LiteLLM: `/etc/litellm/litellm.env`

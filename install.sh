@@ -301,6 +301,7 @@ GIGACHAT_TOKEN_FILE="$TOKEN_DIR/gigachat.token"
 OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
 GIGACHAT_OAUTH_URL="https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
 GIGACHAT_OAUTH_SCOPE="GIGACHAT_API_PERS"
+GIGACHAT_OAUTH_INSECURE=1
 TOKEN_REFRESH_INTERVAL_SEC=1320
 
 LITELLM_PORT=4000
@@ -343,9 +344,13 @@ request_gigachat_access_token() {
     local min_ttl=""
 
     sleep $((RANDOM % 16))
+    if [[ "${GIGACHAT_OAUTH_INSECURE}" -eq 1 ]]; then
+        warn_msg "Using insecure TLS for GigaChat OAuth endpoint."
+    fi
     oauth_response="$(curl --silent --show-error --fail \
         --connect-timeout 5 \
         --max-time 15 \
+        $( [[ "${GIGACHAT_OAUTH_INSECURE}" -eq 1 ]] && echo "--insecure" ) \
         --request POST "$GIGACHAT_OAUTH_URL" \
         --header "Authorization: Basic ${auth_key}" \
         --header "Content-Type: application/x-www-form-urlencoded" \
@@ -576,6 +581,7 @@ ENV_FILE="$ENV_FILE"
 OAUTH_URL="$GIGACHAT_OAUTH_URL"
 SCOPE="$GIGACHAT_OAUTH_SCOPE"
 OAUTH_ENV_FILE="$OAUTH_ENV_FILE"
+INSECURE="$GIGACHAT_OAUTH_INSECURE"
 RESTART_AFTER=0
 if [[ "\${1:-}" == "--restart" ]]; then
   RESTART_AFTER=1
@@ -586,7 +592,12 @@ AUTH_KEY="\$(sed -n 's/^GIGACHAT_AUTHORIZATION_KEY=//p' "\$OAUTH_ENV_FILE" | hea
 [[ -n "\$AUTH_KEY" ]] || exit 0
 
 sleep \$((RANDOM % 16))
-RESP="\$(curl --silent --show-error --fail --connect-timeout 5 --max-time 15 --request POST "\$OAUTH_URL" \\
+if [[ "\$INSECURE" -eq 1 ]]; then
+  echo "refresh warning: Using insecure TLS for GigaChat OAuth endpoint."
+fi
+RESP="\$(curl --silent --show-error --fail --connect-timeout 5 --max-time 15 \\
+  \$( [[ "\$INSECURE" -eq 1 ]] && echo "--insecure" ) \\
+  --request POST "\$OAUTH_URL" \\
   --header "Authorization: Basic \${AUTH_KEY}" \\
   --header "Content-Type: application/x-www-form-urlencoded" \\
   --data "scope=\$SCOPE")"

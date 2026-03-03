@@ -61,6 +61,8 @@ To connect OpenClaw to your LiteLLM Proxy, use the following parameters:
 
 ### GigaChat OAuth + File Token
 
+TLS note: this installer currently uses insecure TLS mode (`--insecure`) for GigaChat OAuth to support environments with self-signed certificate chains. This reduces MITM protection; migrate to custom CA verification for production.
+
 For GigaChat, the installer uses OAuth and stores runtime token in a file:
 
 - runtime env for LiteLLM: `/etc/litellm/litellm.env`
