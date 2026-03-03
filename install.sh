@@ -28,8 +28,6 @@ EN_MESSAGES["dependencies_error"]="Failed to install dependencies. Please check 
 EN_MESSAGES["port_prompt"]="Enter the port for LiteLLM Proxy (default: 4000): "
 EN_MESSAGES["port_invalid"]="Invalid port. Please enter a number between 1024 and 65535."
 EN_MESSAGES["port_in_use"]="Port %s is already in use. Please choose another port."
-EN_MESSAGES["master_key_prompt"]="Enter a strong Master Key for LiteLLM (press Enter to auto-generate): "
-EN_MESSAGES["master_key_generated"]="Master Key auto-generated."
 EN_MESSAGES["llm_selection_prompt"]="Select LLM providers to configure (enter numbers separated by spaces, e.g. 1 3):"
 EN_MESSAGES["llm_none_selected"]="No LLM providers selected. LiteLLM will not be configured."
 EN_MESSAGES["api_key_prompt"]="Enter API Key for %s (press Enter to skip): "
@@ -40,7 +38,6 @@ EN_MESSAGES["priority_retry"]="Too many invalid attempts. Exiting."
 EN_MESSAGES["entered_value"]="Entered."
 EN_MESSAGES["entered_empty"]="Entered: (empty)"
 EN_MESSAGES["title_port"]="LiteLLM Port"
-EN_MESSAGES["title_master_key"]="LiteLLM Master Key"
 EN_MESSAGES["title_llm_select"]="Select LLM Providers"
 EN_MESSAGES["title_api_key"]="API Key for %s"
 EN_MESSAGES["title_priority"]="LLM Priority Order"
@@ -55,7 +52,6 @@ EN_MESSAGES["systemd_error"]="LiteLLM service failed to start. Check logs with '
 EN_MESSAGES["litellm_ready"]="LiteLLM Proxy is running and accessible at http://localhost:%s."
 EN_MESSAGES["openclaw_config_info"]="To connect OpenClaw to LiteLLM, use these settings:"
 EN_MESSAGES["api_base"]="API Base: http://localhost:%s/openai/v1"
-EN_MESSAGES["master_key"]="Master Key: (hidden)"
 EN_MESSAGES["openclaw_model"]="Model for OpenClaw: openclaw-brain"
 EN_MESSAGES["openclaw_install_prompt"]="Do you want to launch the official OpenClaw installer? (y/n): "
 EN_MESSAGES["openclaw_install_start"]="Transferring control to the OpenClaw installer..."
@@ -86,8 +82,6 @@ RU_MESSAGES["dependencies_error"]="Не удалось установить за
 RU_MESSAGES["port_prompt"]="Введите порт для LiteLLM Proxy (по умолчанию: 4000): "
 RU_MESSAGES["port_invalid"]="Неверный порт. Введите число от 1024 до 65535."
 RU_MESSAGES["port_in_use"]="Порт %s уже занят. Выберите другой порт."
-RU_MESSAGES["master_key_prompt"]="Введите надежный Master Key для LiteLLM (Enter для автогенерации): "
-RU_MESSAGES["master_key_generated"]="Master Key сгенерирован автоматически."
 RU_MESSAGES["llm_selection_prompt"]="Выберите провайдеров LLM (введите номера через пробел, напр. 1 3):"
 RU_MESSAGES["llm_none_selected"]="Провайдеры LLM не выбраны. LiteLLM не будет настроен."
 RU_MESSAGES["api_key_prompt"]="Введите API Key для %s (Enter чтобы пропустить): "
@@ -98,7 +92,6 @@ RU_MESSAGES["priority_retry"]="Слишком много неверных поп
 RU_MESSAGES["entered_value"]="Введено."
 RU_MESSAGES["entered_empty"]="Введено: (пусто)"
 RU_MESSAGES["title_port"]="Порт LiteLLM"
-RU_MESSAGES["title_master_key"]="Master Key LiteLLM"
 RU_MESSAGES["title_llm_select"]="Выбор LLM провайдеров"
 RU_MESSAGES["title_api_key"]="API Key для %s"
 RU_MESSAGES["title_priority"]="Приоритет LLM"
@@ -113,7 +106,6 @@ RU_MESSAGES["systemd_error"]="Сервис LiteLLM не запустился. П
 RU_MESSAGES["litellm_ready"]="LiteLLM Proxy запущен и доступен по адресу http://localhost:%s."
 RU_MESSAGES["openclaw_config_info"]="Для подключения OpenClaw к LiteLLM используйте:"
 RU_MESSAGES["api_base"]="API Base: http://localhost:%s/openai/v1"
-RU_MESSAGES["master_key"]="Master Key: (скрыт)"
 RU_MESSAGES["openclaw_model"]="Модель для OpenClaw: openclaw-brain"
 RU_MESSAGES["openclaw_install_prompt"]="Хотите запустить официальный инсталлятор OpenClaw? (y/n): "
 RU_MESSAGES["openclaw_install_start"]="Передаю управление инсталлятору OpenClaw..."
@@ -290,7 +282,6 @@ ENV_FILE="/etc/litellm/litellm.env"
 OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
 
 LITELLM_PORT=4000
-LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
 
 # Provider models (adjust if you want different defaults)
@@ -348,8 +339,6 @@ $(for llm in "${SELECTED_LLMS[@]}"; do
     echo "      api_key: os.environ/${llm^^}_API_KEY"
 done)
 
-litellm_settings:
-  master_key: ${LITELLM_MASTER_KEY}
 EOF
 
     # Fallbacks are only needed for multi-provider setups.
@@ -371,7 +360,6 @@ EOF
     mkdir -p "$(dirname "$ENV_FILE")"
     umask 077
     cat > "$ENV_FILE" << EOF
-LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
 $(for llm in "${SELECTED_LLMS[@]}"; do
     echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
 done)
@@ -516,7 +504,7 @@ info_msg "Dependencies installed."
 
 # 4. Port
 STEP=0
-STEP_TOTAL=6
+STEP_TOTAL=5
 step_header "$(msg title_port)"
 while true; do
     input_port=""
@@ -532,15 +520,7 @@ while true; do
     fi
 done
 
-# 5. Master key (secret input)
-step_header "$(msg title_master_key)"
-ask_secret "$(msg master_key_prompt)" LITELLM_MASTER_KEY ""
-if [[ -z "$LITELLM_MASTER_KEY" ]]; then
-    LITELLM_MASTER_KEY=$(generate_random_string)
-    info_msg "$(msg master_key_generated)"
-fi
-
-# 6. Select LLMs
+# 5. Select LLMs
 LLM_OPTIONS=("GigaChat" "OpenAI" "Anthropic" "DeepSeek")
 SELECTED_LLMS=()
 
@@ -575,7 +555,7 @@ if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     exit 0
 fi
 
-# 7. Collect API keys (secret)
+# 6. Collect API keys (secret)
 declare -A LLM_API_KEYS
 declare -A LLM_MODELS
 for k in "${!DEFAULT_LLM_MODELS[@]}"; do
@@ -596,7 +576,7 @@ for llm in "${SELECTED_LLMS[@]}"; do
     LLM_API_KEYS["$llm"]="$current_key"
 done
 
-# 8. Priority reorder
+# 7. Priority reorder
 if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
     selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
     step_header "$(msg title_priority)"
@@ -641,7 +621,7 @@ if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
     done
 fi
 
-# 9. Install LiteLLM
+# 8. Install LiteLLM
 info_msg "$(msg litellm_install)"
 mkdir -p "$INSTALL_DIR"
 info_msg "$(msg venv_create)"
@@ -651,12 +631,12 @@ pip install --upgrade pip >> "$log_file" 2>&1 || error_exit "$(msg litellm_insta
 pip install --upgrade --no-cache-dir "litellm[proxy]>=1.81.12" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
 deactivate
 
-# 10. Create runtime user + config/env
+# 9. Create runtime user + config/env
 create_system_user
 write_config_and_env
 write_systemd_service
 
-# 11. Start & check
+# 10. Start & check
 info_msg "$(msg systemd_start)"
 systemctl start litellm.service >> "$log_file" 2>&1
 sleep 5
@@ -669,21 +649,19 @@ fi
 health_check
 info_msg "$(msg litellm_ready "$LITELLM_PORT")"
 
-# 12. OpenClaw integration info (don’t leak master key)
+# 11. OpenClaw integration info
 info_msg "$(msg openclaw_config_info)"
 info_msg "$(msg api_base "$LITELLM_PORT")"
-info_msg "$(msg master_key "$LITELLM_MASTER_KEY")"
 info_msg "$(msg openclaw_model)"
 
 echo "----------------------------------------"
 echo "LiteLLM install summary:"
 echo "  URL: http://localhost:${LITELLM_PORT}"
 echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
-echo "  Master Key: (hidden)"
 echo "  Model: openclaw-brain"
 echo "----------------------------------------"
 
-# 13. Optional OpenClaw install
+# 12. Optional OpenClaw install
 step_header "$(msg title_openclaw)"
 install_oc=""
 ask "$(msg openclaw_install_prompt)" install_oc ""
