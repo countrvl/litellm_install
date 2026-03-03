@@ -28,7 +28,7 @@ LiteLLM will be configured as a `systemd` service, ensuring its automatic startu
 *   **Isolated Installation:** LiteLLM is installed in a Python virtual environment (`venv`).
 *   **Autostart:** LiteLLM is configured as a `systemd` service for automatic startup.
 *   **Optional OpenClaw Installation:** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
-*   **Management:** Supports `--update` flag for LiteLLM updates and `--uninstall` for complete removal.
+*   **Management:** Supports `--update` flag for LiteLLM updates and `--uninstall` for complete removal (service, installation files, `/etc/litellm`, system user/group `litellm`).
 
 ## Installation
 
@@ -77,6 +77,12 @@ To completely remove LiteLLM and all its components:
 ```bash
 sudo /opt/litellm/install.sh --uninstall
 ```
+
+`--uninstall` removes:
+- `litellm.service` (`systemd` stop/disable + unit file removal)
+- `/opt/litellm`
+- `/etc/litellm` (including `litellm.env`)
+- system user `litellm` and group `litellm` (if present)
 
 ## Supported LLMs
 

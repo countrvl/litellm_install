@@ -74,6 +74,7 @@ EN_MESSAGES["user_create"]="Creating system user for LiteLLM..."
 EN_MESSAGES["user_exists"]="System user for LiteLLM already exists."
 EN_MESSAGES["venv_create"]="Creating Python venv..."
 EN_MESSAGES["service_user"]="Running systemd service as unprivileged user: litellm"
+EN_MESSAGES["gigachat_plugin_install"]="GigaChat selected. Installing litellm-gigachat plugin..."
 
 declare -A RU_MESSAGES
 RU_MESSAGES["welcome"]="Добро пожаловать в установщик LiteLLM и OpenClaw!"
@@ -132,6 +133,7 @@ RU_MESSAGES["user_create"]="Создаю системного пользоват
 RU_MESSAGES["user_exists"]="Системный пользователь для LiteLLM уже существует."
 RU_MESSAGES["venv_create"]="Создаю Python venv..."
 RU_MESSAGES["service_user"]="systemd сервис запускается от непривилегированного пользователя: litellm"
+RU_MESSAGES["gigachat_plugin_install"]="Выбран GigaChat. Устанавливаю плагин litellm-gigachat..."
 
 msg() {
     local key="$1"
@@ -273,6 +275,13 @@ if [[ -z "$LANG_ARG" ]]; then
     set_language
 fi
 
+# Require root early for management modes to avoid permission-related partial failures
+if [[ "${MODE:-}" == "update" || "${MODE:-}" == "uninstall" ]]; then
+    if [[ "$EUID" -ne 0 ]]; then
+        error_exit "$(msg sudo_required)"
+    fi
+fi
+
 # --- Variables ---
 INSTALL_DIR="/opt/litellm"
 VENV_DIR="$INSTALL_DIR/venv"
@@ -285,7 +294,6 @@ OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
 LITELLM_PORT=4000
 LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
-LITELLM_VERSION="1.40.14"   # pin this (change only after testing)
 
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
@@ -416,9 +424,9 @@ do_update() {
         exit 1
     fi
 
-    # upgrade/pin
+    # upgrade to latest
     source "$VENV_DIR/bin/activate"
-    pip install "litellm[proxy]==${LITELLM_VERSION}" >> "$log_file" 2>&1
+    pip install --upgrade "litellm[proxy]" >> "$log_file" 2>&1
     deactivate
 
     # restart
@@ -440,13 +448,25 @@ do_uninstall() {
     local confirm_uninstall=""
     ask "$(msg uninstall_confirm)" confirm_uninstall ""
     if [[ "$confirm_uninstall" =~ ^[Yy]$ ]]; then
+        # Stop and remove service artifacts
         systemctl stop litellm.service >> "$log_file" 2>&1 || true
         systemctl disable litellm.service >> "$log_file" 2>&1 || true
         rm -f "$SYSTEMD_SERVICE_FILE" || true
         systemctl daemon-reload >> "$log_file" 2>&1 || true
 
+        # Remove installed files and runtime env
         rm -rf "$INSTALL_DIR" || true
+        rm -rf "/etc/litellm" || true
         rm -f "$ENV_FILE" || true
+
+        # Remove dedicated system account/group if present
+        if id -u litellm >/dev/null 2>&1; then
+            userdel litellm >> "$log_file" 2>&1 || true
+        fi
+        if getent group litellm >/dev/null 2>&1; then
+            groupdel litellm >> "$log_file" 2>&1 || true
+        fi
+
         info_msg "$(msg uninstall_complete)"
     else
         info_msg "$(msg uninstall_aborted)"
@@ -618,7 +638,11 @@ mkdir -p "$INSTALL_DIR"
 info_msg "$(msg venv_create)"
 python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
-pip install "litellm[proxy]==${LITELLM_VERSION}" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
+pip install "litellm[proxy]" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
+if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]]; then
+    info_msg "$(msg gigachat_plugin_install)"
+    pip install "litellm-gigachat" >> "$log_file" 2>&1 || error_exit "Failed to install litellm-gigachat."
+fi
 deactivate
 
 # 10. Create runtime user + config/env
