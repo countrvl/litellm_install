@@ -155,9 +155,9 @@ if [[ ! -w "$(dirname "$log_file")" ]]; then
     log_file="/tmp/litellm_installer.log"
 fi
 
-info_msg() { [[ -n "${1:-}" ]] && echo -e "\e[32m[INFO]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" >/dev/null; }
-warn_msg() { [[ -n "${1:-}" ]] && echo -e "\e[33m[WARN]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" >/dev/null; }
-error_msg(){ [[ -n "${1:-}" ]] && echo -e "\e[31m[ERROR]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" >/dev/null; }
+info_msg() { [[ -n "${1:-}" ]] && echo -e "\e[32m[INFO]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"; }
+warn_msg() { [[ -n "${1:-}" ]] && echo -e "\e[33m[WARN]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"; }
+error_msg(){ [[ -n "${1:-}" ]] && echo -e "\e[31m[ERROR]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"; }
 
 info_msg "Log file: $log_file"
 
@@ -482,7 +482,7 @@ fi
 info_msg "$(msg dependencies_install)"
 info_msg "Details: $log_file"
 apt update -y >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
-apt install -y python3-venv git curl jq >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
+apt install -y python3-venv git curl jq iproute2 >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
 info_msg "Dependencies installed."
 
 # 4. Port
