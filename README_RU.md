@@ -1,0 +1,86 @@
+[English Version](README.md) | Русский
+
+# LiteLLM & OpenClaw Installer (Русская версия)
+
+Этот скрипт предназначен для автоматической установки и настройки [LiteLLM Proxy](https://litellm.ai/) с поддержкой нескольких Large Language Models (LLM), включая GigaChat, OpenAI, Anthropic и DeepSeek, на операционных системах Debian/Ubuntu. После успешной настройки LiteLLM скрипт предлагает опционально запустить официальный инсталлятор [OpenClaw](https://openclaw.ai/).
+
+LiteLLM будет настроен как системный сервис (`systemd`), что обеспечит его автоматический запуск при старте системы и надежную работу.
+
+### Ресурсы LiteLLM:
+*   **Официальный сайт:** [litellm.ai](https://litellm.ai/)
+*   **Документация:** [docs.litellm.ai](https://docs.litellm.ai/)
+*   **GitHub:** [github.com/BerriAI/litellm](https://github.com/BerriAI/litellm)
+
+## Возможности
+
+*   **Поддержка ОС:** Debian и Ubuntu.
+*   **Интерактивный выбор LLM:** Выберите, какие LLM вы хотите использовать:
+    *   [GigaChat](https://developers.sber.ru/docs/ru/gigachat/models)
+    *   [OpenAI](https://platform.openai.com/docs/models)
+    *   [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview)
+    *   [DeepSeek](https://platform.deepseek.com/docs)
+*   **Валидация API-ключей:** Скрипт проверяет введенные API-ключи на валидность сразу после ввода.
+*   **Настраиваемый приоритет LLM (Fallback):** Определите порядок использования LLM в случае недоступности основной модели.
+*   **Выбор порта LiteLLM:** Укажите желаемый порт для работы LiteLLM Proxy.
+*   **Автоматическая генерация Master Key:** Если не указан, мастер-ключ для LiteLLM будет сгенерирован автоматически.
+*   **Изолированная установка:** LiteLLM устанавливается в виртуальное окружение Python (`venv`).
+*   **Автозапуск:** LiteLLM настраивается как `systemd` сервис для автоматического запуска.
+*   **Опциональная установка OpenClaw:** После настройки LiteLLM скрипт предложит запустить официальный инсталлятор OpenClaw.
+*   **Управление:** Поддержка флагов `--update` для обновления LiteLLM и `--uninstall` для полного удаления.
+
+## Установка
+
+Для запуска инсталлятора выполните следующую команду в вашем терминале:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/install.sh | sudo bash
+```
+
+### Шаги установки:
+
+1.  **Запуск скрипта:** Выполните команду выше. Скрипт запросит права `sudo`.
+2.  **Выбор порта LiteLLM:** Введите желаемый порт для LiteLLM (по умолчанию `4000`).
+3.  **Мастер-ключ LiteLLM:** Введите мастер-ключ для LiteLLM или нажмите Enter для автоматической генерации.
+4.  **Выбор LLM:** Выберите номера LLM, которые вы хотите использовать (например, `1 2 4` для GigaChat, OpenAI и DeepSeek).
+5.  **Ввод API-ключей:** Для каждой выбранной LLM скрипт запросит соответствующие API-ключи и проверит их валидность.
+6.  **Установка приоритетов:** Если выбрано несколько LLM, скрипт предложит установить порядок их использования (приоритет/fallback).
+7.  **Установка OpenClaw (опционально):** После настройки LiteLLM скрипт предложит запустить официальный инсталлятор OpenClaw.
+
+## Использование
+
+После успешной установки LiteLLM будет доступен по адресу `http://localhost:<ВАШ_ПОРТ_LITELLM>`.
+
+### Настройка OpenClaw
+
+Для подключения OpenClaw к вашему LiteLLM Proxy используйте следующие параметры:
+
+*   **API Base:** `http://localhost:<ВАШ_ПОРТ_LITELLM>/openai/v1`
+*   **API Key:** `<ВАШ_МАСТЕР_КЛЮЧ_LITELLM>`
+*   **Model:** `openclaw-brain` (это виртуальная модель, которая использует вашу настроенную цепочку приоритетов)
+
+### Обновление LiteLLM
+
+Для обновления LiteLLM до последней версии:
+
+```bash
+sudo /opt/litellm/install.sh --update
+```
+
+### Удаление LiteLLM
+
+Для полного удаления LiteLLM и всех его компонентов:
+
+```bash
+sudo /opt/litellm/install.sh --uninstall
+```
+
+## Поддерживаемые LLM
+
+*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
+*   **[OpenAI (GPT-5-nano)](https://platform.openai.com/docs/models):** `openai/gpt-5-nano`
+*   **[Anthropic (Haiku 4.5)](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-haiku-4-5`
+*   **[DeepSeek (deepseek-chat)](https://platform.deepseek.com/docs):** `deepseek/deepseek-chat`
+
+## Лицензия
+
+Этот проект распространяется под лицензией MIT. См. файл [LICENSE](LICENSE) для получения дополнительной информации.
