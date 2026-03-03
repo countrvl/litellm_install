@@ -160,17 +160,21 @@ error_msg() {
 }
 
 error_exit() {
-    error_msg "$1"
+    local message="${1:-$(msg error_occurred)}"
+    error_msg "$message"
     cleanup
     exit 1
 }
 
 cleanup() {
     info_msg "$(msg cleanup_message)"
-    rm -rf "$TEMP_DIR"
+    if [[ -n "$TEMP_DIR" ]]; then
+        rm -rf "$TEMP_DIR"
+    fi
 }
 
-trap error_exit ERR INT TERM
+trap 'error_exit' ERR
+trap 'error_exit "Interrupted."' INT TERM
 
 # --- Variables ---
 INSTALL_DIR="/opt/litellm"
@@ -243,14 +247,6 @@ validate_api_key() {
 
     if [[ -z "$api_key" ]]; then
         return 1 # Empty key is invalid
-    fi
-
-    info_msg "$(msg api_key_prompt)" "$provider_name"
-    read -p "" api_key
-
-    if [[ -z "$api_key" ]]; then
-        warn_msg "$(msg api_key_skipped)" "$provider_name"
-        return 1
     fi
 
     info_msg "Validating API Key for $provider_name..."
@@ -351,40 +347,28 @@ LLM_OPTIONS=("GigaChat" "OpenAI" "Anthropic" "DeepSeek")
 SELECTED_LLMS=()
 
 select_llms() {
-    local i=0 num_options=${#LLM_OPTIONS[@]}
+    local selection_input
     local selected_indices=()
 
-    while true; do
-        clear
-        echo "$(msg llm_selection_prompt)"
-        for j in "${!LLM_OPTIONS[@]}"; do
-            if [[ " ${selected_indices[@]} " =~ " ${j} " ]]; then
-                echo -e "\e[32m[x]\e[0m ${LLM_OPTIONS[$j]}"
-            else
-                echo -e "\e[31m[ ]\e[0m ${LLM_OPTIONS[$j]}"
-            fi
-        done
-        echo -e "\nUse SPACE to toggle, ENTER to confirm."
+    echo "$(msg llm_selection_prompt)"
+    for i in "${!LLM_OPTIONS[@]}"; do
+        echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
+    done
+    read -p "Enter numbers separated by spaces (e.g. 1 3): " selection_input
 
-        read -s -n 1 key
-        case "$key" in
-            " ") # Spacebar
-                if [[ " ${selected_indices[@]} " =~ " ${i} " ]]; then
-                    selected_indices=( "${selected_indices[@]/$i}" )
-                else
-                    selected_indices+=( "$i" )
-                fi
-                ;;
-            "") # Enter
-                break
-                ;;
-            *) # Other keys
-                ;;
-        esac
+    for idx in $selection_input; do
+        if [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= ${#LLM_OPTIONS[@]} )); then
+            selected_indices+=( "$((idx - 1))" )
+        fi
     done
 
+    # Deduplicate while preserving order
+    local seen=" "
     for idx in "${selected_indices[@]}"; do
-        SELECTED_LLMS+=( "${LLM_OPTIONS[$idx]}" )
+        if [[ "$seen" != *" $idx "* ]]; then
+            SELECTED_LLMS+=( "${LLM_OPTIONS[$idx]}" )
+            seen+="$idx "
+        fi
     done
 }
 
@@ -402,7 +386,6 @@ else
     LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
 
     for llm in "${SELECTED_LLMS[@]}"; do
-        api_key_var_name="${llm^^}_API_KEY"
         validation_url=""
         case "$llm" in
             "GigaChat") validation_url="$GIGACHAT_VALIDATION_URL" ;;
@@ -412,17 +395,17 @@ else
         esac
 
         while true; do
-            read -p "$(msg api_key_prompt)" "$llm"
-            current_key="${!llm}"
+            read -r -p "$(msg api_key_prompt)" current_key
+            if [[ -z "$current_key" ]]; then
+                warn_msg "$(msg api_key_skipped)" "$llm"
+                break
+            fi
+
             if validate_api_key "$llm" "$current_key" "$validation_url"; then
                 LLM_API_KEYS["$llm"]="$current_key"
                 break
             else
-                read -p "$(msg api_key_invalid)" "$llm"
-                if [[ -z "${!llm}" ]]; then
-                    warn_msg "$(msg api_key_skipped)" "$llm"
-                    break
-                fi
+                error_msg "$(msg api_key_invalid)" "$llm"
             fi
         done
     done
