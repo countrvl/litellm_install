@@ -286,7 +286,7 @@ MAX_RETRIES=3
 
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
-DEFAULT_LLM_MODELS["GigaChat"]="gigachat"
+DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2-Lite"
 DEFAULT_LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
 DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
 DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
@@ -337,6 +337,9 @@ $(for llm in "${SELECTED_LLMS[@]}"; do
     echo "    litellm_params:"
     echo "      model: ${LLM_MODELS[$llm]}"
     echo "      api_key: os.environ/${llm^^}_API_KEY"
+    if [[ "$llm" == "GigaChat" ]]; then
+        echo "      ssl_verify: false"
+    fi
 done)
 
 EOF
