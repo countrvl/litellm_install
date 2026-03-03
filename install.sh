@@ -280,6 +280,63 @@ LITELLM_PORT=4000
 LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
 
+model_name_to_llm() {
+    case "$1" in
+        gigachat) echo "GigaChat" ;;
+        openai) echo "OpenAI" ;;
+        anthropic) echo "Anthropic" ;;
+        deepseek) echo "DeepSeek" ;;
+        *) echo "" ;;
+    esac
+}
+
+write_config_and_env() {
+    info_msg "$(msg config_generate)"
+    mkdir -p "$CONFIG_DIR"
+    cat > "$CONFIG_FILE" << EOF
+model_list:
+$(for llm in "${SELECTED_LLMS[@]}"; do
+    echo "  - model_name: $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    echo "    litellm_params:"
+    echo "      model: ${LLM_MODELS[$llm]}"
+    if [[ "$llm" == "GigaChat" ]]; then
+        echo "      ssl_verify: False"
+    fi
+    echo "      api_key: \"os.environ/${llm^^}_API_KEY\""
+done)
+
+litellm_settings:
+  master_key: "$LITELLM_MASTER_KEY"
+
+router_settings:
+  model_group_alias:
+    openclaw-brain:
+      - $(for llm in "${SELECTED_LLMS[@]}"; do echo -n "\"$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite\" "; done | sed 's/ $//')
+EOF
+
+    info_msg "$(msg systemd_setup)"
+    sudo mkdir -p "$(dirname "$ENV_FILE")"
+    sudo chown root:root "$(dirname "$ENV_FILE")"
+    umask 077
+    openai_selected=0
+    for llm in "${SELECTED_LLMS[@]}"; do
+        if [[ "$llm" == "OpenAI" ]]; then
+            openai_selected=1
+            break
+        fi
+    done
+    cat > "$ENV_FILE" << EOF
+LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
+$(if [[ "$openai_selected" -eq 0 ]]; then echo "OPENAI_API_KEY=dummy"; fi)
+$(for llm in "${SELECTED_LLMS[@]}"; do
+    echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
+done)
+EOF
+    umask 022
+    sudo chown root:root "$ENV_FILE"
+    sudo chmod 600 "$ENV_FILE"
+}
+
 # --- Helper Functions ---
 
 # Function to check if a port is in use
@@ -316,6 +373,42 @@ for arg in "$@"; do
                 source "$VENV_DIR/bin/activate"
                 pip install --upgrade "litellm[proxy]"
                 deactivate
+                if [[ -f "$CONFIG_FILE" && -f "$ENV_FILE" ]]; then
+                    source "$ENV_FILE"
+                    if [[ -z "$LITELLM_MASTER_KEY" ]]; then
+                        LITELLM_MASTER_KEY=$(awk -F\" '/master_key:/{print $2; exit}' "$CONFIG_FILE")
+                    fi
+                    if [[ -z "$LITELLM_MASTER_KEY" ]]; then
+                        error_msg "Missing LITELLM_MASTER_KEY. Skipping config regeneration."
+                    else
+                        SELECTED_LLMS=()
+                        mapfile -t model_names < <(awk '/model_name:/{print $2}' "$CONFIG_FILE")
+                        for model_name in "${model_names[@]}"; do
+                            base="${model_name%-lite}"
+                            llm=$(model_name_to_llm "$base")
+                            if [[ -n "$llm" && " ${SELECTED_LLMS[*]} " != *" $llm "* ]]; then
+                                SELECTED_LLMS+=( "$llm" )
+                            fi
+                        done
+                        declare -A LLM_API_KEYS
+                        declare -A LLM_MODELS
+                        LLM_MODELS["GigaChat"]="gigachat/GigaChat"
+                        LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
+                        LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
+                        LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
+                        for llm in "${SELECTED_LLMS[@]}"; do
+                            key_var="${llm^^}_API_KEY"
+                            LLM_API_KEYS["$llm"]="${!key_var}"
+                        done
+                        if [[ ${#SELECTED_LLMS[@]} -gt 0 ]]; then
+                            write_config_and_env
+                        else
+                            error_msg "No models found in config. Skipping config regeneration."
+                        fi
+                    fi
+                else
+                    error_msg "Missing config or env file. Skipping config regeneration."
+                fi
                 sudo systemctl restart litellm.service
                 info_msg "$(msg update_complete)"
             else
@@ -533,45 +626,8 @@ else
     pip install --upgrade "litellm[proxy]" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
     deactivate
 
-    # 10. Generate LiteLLM Config
-    info_msg "$(msg config_generate)"
-    mkdir -p "$CONFIG_DIR"
-    cat > "$CONFIG_FILE" << EOF
-model_list:
-$(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "  - model_name: $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
-    echo "    litellm_params:"
-    echo "      model: ${LLM_MODELS[$llm]}"
-    if [[ "$llm" == "GigaChat" ]]; then
-        echo "      ssl_verify: False"
-    fi
-    echo "      api_key: \"os.environ/${llm^^}_API_KEY\""
-done)
-
-litellm_settings:
-  master_key: "$LITELLM_MASTER_KEY"
-
-router_settings:
-  routing_strategy: "priority"
-  model_group_alias:
-    - model_group: "openclaw-brain"
-      models: [$(for llm in "${SELECTED_LLMS[@]}"; do echo -n "\"$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite\" "; done | sed 's/ $//')]
-EOF
-
-    # 11. Setup Systemd Service
-    info_msg "$(msg systemd_setup)"
-    sudo mkdir -p "$(dirname "$ENV_FILE")"
-    sudo chown root:root "$(dirname "$ENV_FILE")"
-    umask 077
-    cat > "$ENV_FILE" << EOF
-LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
-$(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
-done)
-EOF
-    umask 022
-    sudo chown root:root "$ENV_FILE"
-    sudo chmod 600 "$ENV_FILE"
+    # 10. Generate LiteLLM Config + Env
+    write_config_and_env
     cat > "$SYSTEMD_SERVICE_FILE" << EOF
 [Unit]
 Description=LiteLLM Proxy Service
@@ -617,6 +673,9 @@ EOF
     echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
     echo "  Master Key: ${LITELLM_MASTER_KEY}"
     echo "  Model: openclaw-brain"
+    if [[ "$openai_selected" -eq 0 ]]; then
+        echo "  Note: OPENAI_API_KEY set to dummy for /openai/v1 compatibility"
+    fi
     echo "----------------------------------------"
 
     # 14. Optional OpenClaw Installation
