@@ -49,28 +49,6 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 7.  **Установка приоритетов:** Если выбрано несколько LLM, скрипт предложит установить порядок их использования (приоритет/fallback). Неверный ввод ограничен 3 попытками.
 8.  **Установка OpenClaw (опционально):** После настройки LiteLLM скрипт предложит запустить официальный инсталлятор OpenClaw.
 
-### Неинтерактивный режим
-
-Можно запустить без вопросов, передав параметры:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/install.sh | sudo bash -s -- \
-  --non-interactive \
-  --port=4000 \
-  --master-key=YOUR_MASTER_KEY \
-  --llms=OpenAI,DeepSeek \
-  --priority="1 2" \
-  --openai-key=YOUR_OPENAI_KEY \
-  --deepseek-key=YOUR_DEEPSEEK_KEY \
-  --openclaw=no
-```
-
-Флаги:
-* `--non-interactive` включает неинтерактивный режим.
-* `--llms` — список через запятую: `GigaChat,OpenAI,Anthropic,DeepSeek`.
-* `--priority` обязателен, если выбрано несколько LLM.
-* Ключи провайдеров: `--openai-key`, `--anthropic-key`, `--deepseek-key`, `--gigachat-key`.
-* `--openclaw` принимает `yes`, `no` или `ask`.
 
 ## Использование
 
