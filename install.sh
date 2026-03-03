@@ -347,7 +347,7 @@ request_gigachat_access_token() {
 
     sleep $((RANDOM % 16))
     if [[ "${GIGACHAT_OAUTH_INSECURE}" -eq 1 ]]; then
-        warn_msg "Using insecure TLS for GigaChat OAuth endpoint."
+        echo "[WARN] Using insecure TLS for GigaChat OAuth endpoint." >&2
     fi
     oauth_response="$(curl --silent --show-error --fail \
         --connect-timeout 5 \
@@ -366,10 +366,10 @@ request_gigachat_access_token() {
 
     if (( expires_raw > 1000000000000 )); then
         expires_sec=$((expires_raw / 1000))
-        info_msg "GigaChat OAuth expires_at parsed as milliseconds."
+        echo "[INFO] GigaChat OAuth expires_at parsed as milliseconds." >&2
     elif (( expires_raw > 1000000000 && expires_raw < 1000000000000 )); then
         expires_sec="$expires_raw"
-        info_msg "GigaChat OAuth expires_at parsed as seconds."
+        echo "[INFO] GigaChat OAuth expires_at parsed as seconds." >&2
     else
         return 1
     fi
@@ -381,7 +381,7 @@ request_gigachat_access_token() {
         min_ttl=900
     fi
 
-    info_msg "GigaChat token ttl=${ttl}s min_ttl=${min_ttl}s expires_at=${expires_sec}"
+    echo "[INFO] GigaChat token ttl=${ttl}s min_ttl=${min_ttl}s expires_at=${expires_sec}" >&2
     if (( ttl < min_ttl )); then
         return 1
     fi
@@ -413,6 +413,9 @@ upsert_env_var() {
 
 write_gigachat_token_atomic() {
     local token="$1"
+    if [[ -z "$token" || "$token" == \[* || "$token" =~ [[:space:]] ]]; then
+        return 1
+    fi
     mkdir -p "$TOKEN_DIR"
     chown root:litellm "$TOKEN_DIR"
     chmod 750 "$TOKEN_DIR"
@@ -435,7 +438,7 @@ refresh_gigachat_token_from_env() {
     info_msg "$(msg gigachat_token_refresh)"
     local access_token=""
     access_token="$(request_gigachat_access_token "$auth_key")" || error_exit "$(msg gigachat_token_refresh_failed)"
-    write_gigachat_token_atomic "$access_token"
+    write_gigachat_token_atomic "$access_token" || error_exit "$(msg gigachat_token_refresh_failed)"
     info_msg "$(msg gigachat_token_refresh_done)"
 
     if [[ "$restart_after" -eq 1 ]]; then
@@ -608,6 +611,10 @@ RESP="\$(curl --silent --show-error --fail --connect-timeout 5 --max-time 15 \\
 TOKEN="\$(printf '%s' "\$RESP" | jq -r '.access_token // empty')"
 EXPIRES_RAW="\$(printf '%s' "\$RESP" | jq -r '.expires_at // empty')"
 [[ -n "\$TOKEN" && "\$EXPIRES_RAW" =~ ^[0-9]+$ ]] || { echo "refresh failed: invalid OAuth response"; exit 1; }
+if [[ "\$TOKEN" == \[* || "\$TOKEN" =~ [[:space:]] ]]; then
+  echo "refresh failed: token format guard blocked invalid token payload"
+  exit 1
+fi
 if (( EXPIRES_RAW > 1000000000000 )); then
   EXPIRES_SEC=\$((EXPIRES_RAW / 1000))
   echo "refresh info: expires_at parsed as ms"
@@ -914,7 +921,7 @@ done
 if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]]; then
     info_msg "$(msg gigachat_token_refresh)"
     initial_gigachat_token="$(request_gigachat_access_token "${LLM_API_KEYS["GigaChat"]}")" || error_exit "$(msg gigachat_token_refresh_failed)"
-    write_gigachat_token_atomic "$initial_gigachat_token"
+    write_gigachat_token_atomic "$initial_gigachat_token" || error_exit "$(msg gigachat_token_refresh_failed)"
     info_msg "$(msg gigachat_token_refresh_done)"
 fi
 
