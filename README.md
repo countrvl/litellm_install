@@ -2,7 +2,7 @@ English | [Русский](README_RU.md)
 
 # LiteLLM & OpenClaw Installer
 
-This script automates the installation and configuration of [LiteLLM Proxy](https://litellm.ai/) with support for multiple Large Language Models (LLM), including GigaChat, OpenAI, Anthropic, and DeepSeek, on Debian/Ubuntu operating systems. After successfully setting up LiteLLM, the script optionally offers to run the official [OpenClaw](https://openclaw.ai/) installer.
+This script automates the installation and configuration of [LiteLLM Proxy](https://litellm.ai/) with support for multiple Large Language Models (LLM), including GigaChat, OpenAI, Anthropic, and DeepSeek, on Debian/Ubuntu operating systems. After successfully setting up LiteLLM, the script optionally offers to run the official [OpenClaw](https://openclaw.ai/) installer (https://openclaw.ai/install.sh).
 
 LiteLLM will be configured as a `systemd` service, ensuring its automatic startup and reliable operation.
 

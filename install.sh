@@ -279,7 +279,7 @@ CONFIG_DIR="$INSTALL_DIR/config"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/litellm.service"
 ENV_FILE="/etc/litellm/litellm.env"
-OPENCLAW_INSTALL_SCRIPT="https://raw.githubusercontent.com/openclaw/openclaw/main/install.sh"
+OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
 
 # Default values
 LITELLM_PORT=4000
