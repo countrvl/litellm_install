@@ -70,6 +70,11 @@ EN_MESSAGES["user_create"]="Creating system user for LiteLLM..."
 EN_MESSAGES["user_exists"]="System user for LiteLLM already exists."
 EN_MESSAGES["venv_create"]="Creating Python venv..."
 EN_MESSAGES["service_user"]="Running systemd service as unprivileged user: litellm"
+EN_MESSAGES["gigachat_auth_prompt"]="Enter GigaChat Authorization Key for OAuth (press Enter to skip): "
+EN_MESSAGES["gigachat_token_refresh"]="Refreshing GigaChat access token..."
+EN_MESSAGES["gigachat_token_refresh_done"]="GigaChat access token refreshed."
+EN_MESSAGES["gigachat_token_refresh_failed"]="Failed to refresh GigaChat access token via OAuth."
+EN_MESSAGES["token_timer_setup"]="Setting up GigaChat token refresh timer..."
 
 declare -A RU_MESSAGES
 RU_MESSAGES["welcome"]="Добро пожаловать в установщик LiteLLM и OpenClaw!"
@@ -124,6 +129,11 @@ RU_MESSAGES["user_create"]="Создаю системного пользоват
 RU_MESSAGES["user_exists"]="Системный пользователь для LiteLLM уже существует."
 RU_MESSAGES["venv_create"]="Создаю Python venv..."
 RU_MESSAGES["service_user"]="systemd сервис запускается от непривилегированного пользователя: litellm"
+RU_MESSAGES["gigachat_auth_prompt"]="Введите Authorization Key GigaChat для OAuth (Enter чтобы пропустить): "
+RU_MESSAGES["gigachat_token_refresh"]="Обновляю GigaChat access token..."
+RU_MESSAGES["gigachat_token_refresh_done"]="GigaChat access token обновлён."
+RU_MESSAGES["gigachat_token_refresh_failed"]="Не удалось обновить GigaChat access token через OAuth."
+RU_MESSAGES["token_timer_setup"]="Настраиваю таймер обновления токена GigaChat..."
 
 msg() {
     local key="$1"
@@ -246,6 +256,7 @@ ask_secret() {
 # Parse command line arguments for language and mode flags
 LANG_ARG=""
 MODE=""
+RESTART_SERVICE=0
 for arg in "$@"; do
     case $arg in
         --lang=*)
@@ -258,6 +269,8 @@ for arg in "$@"; do
             ;;
         --update) MODE="update" ;;
         --uninstall) MODE="uninstall" ;;
+        --refresh-token) MODE="refresh-token" ;;
+        --restart-service) RESTART_SERVICE=1 ;;
     esac
 done
 
@@ -266,7 +279,7 @@ if [[ -z "$LANG_ARG" ]]; then
 fi
 
 # Require root early for management modes to avoid permission-related partial failures
-if [[ "${MODE:-}" == "update" || "${MODE:-}" == "uninstall" ]]; then
+if [[ "${MODE:-}" == "update" || "${MODE:-}" == "uninstall" || "${MODE:-}" == "refresh-token" ]]; then
     if [[ "$EUID" -ne 0 ]]; then
         error_exit "$(msg sudo_required)"
     fi
@@ -278,15 +291,24 @@ VENV_DIR="$INSTALL_DIR/venv"
 CONFIG_DIR="$INSTALL_DIR/config"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/litellm.service"
+TOKEN_REFRESH_SERVICE_FILE="/etc/systemd/system/litellm-token-refresh.service"
+TOKEN_REFRESH_TIMER_FILE="/etc/systemd/system/litellm-token-refresh.timer"
 ENV_FILE="/etc/litellm/litellm.env"
+OAUTH_ENV_FILE="/etc/litellm/gigachat.env"
+TOKEN_REFRESH_SCRIPT="/opt/litellm/refresh_gigachat_token.sh"
+TOKEN_DIR="/etc/litellm/tokens"
+GIGACHAT_TOKEN_FILE="$TOKEN_DIR/gigachat.token"
 OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
+GIGACHAT_OAUTH_URL="https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+GIGACHAT_OAUTH_SCOPE="GIGACHAT_API_PERS"
+TOKEN_REFRESH_INTERVAL_SEC=1320
 
 LITELLM_PORT=4000
 MAX_RETRIES=3
 
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
-DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2-Lite"
+DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2"
 DEFAULT_LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
 DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
 DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
@@ -310,6 +332,109 @@ generate_random_string() {
     head /dev/urandom | tr -dc A-Za-z0-9_ | head -c 32
 }
 
+request_gigachat_access_token() {
+    local auth_key="$1"
+    local oauth_response=""
+    local token=""
+    local expires_raw=""
+    local expires_sec=""
+    local now=""
+    local ttl=""
+    local min_ttl=""
+
+    sleep $((RANDOM % 16))
+    oauth_response="$(curl --silent --show-error --fail \
+        --connect-timeout 5 \
+        --max-time 15 \
+        --request POST "$GIGACHAT_OAUTH_URL" \
+        --header "Authorization: Basic ${auth_key}" \
+        --header "Content-Type: application/x-www-form-urlencoded" \
+        --data "scope=${GIGACHAT_OAUTH_SCOPE}")" || return 1
+
+    token="$(printf '%s' "$oauth_response" | jq -r '.access_token // empty')" || return 1
+    expires_raw="$(printf '%s' "$oauth_response" | jq -r '.expires_at // empty')" || return 1
+    [[ -n "$token" ]] || return 1
+    [[ "$expires_raw" =~ ^[0-9]+$ ]] || return 1
+
+    if (( expires_raw > 1000000000000 )); then
+        expires_sec=$((expires_raw / 1000))
+        info_msg "GigaChat OAuth expires_at parsed as milliseconds."
+    elif (( expires_raw > 1000000000 && expires_raw < 1000000000000 )); then
+        expires_sec="$expires_raw"
+        info_msg "GigaChat OAuth expires_at parsed as seconds."
+    else
+        return 1
+    fi
+
+    now="$(date +%s)"
+    ttl=$((expires_sec - now))
+    min_ttl=$((TOKEN_REFRESH_INTERVAL_SEC + 300))
+    if (( min_ttl < 900 )); then
+        min_ttl=900
+    fi
+
+    info_msg "GigaChat token ttl=${ttl}s min_ttl=${min_ttl}s expires_at=${expires_sec}"
+    if (( ttl < min_ttl )); then
+        return 1
+    fi
+
+    printf '%s' "$token"
+}
+
+upsert_env_var() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    local tmp_file
+    tmp_file="$(mktemp)"
+
+    if [[ -f "$file" ]]; then
+        awk -v k="$key" -v v="$value" '
+            BEGIN { done=0 }
+            $0 ~ "^" k "=" { print k "=" v; done=1; next }
+            { print }
+            END { if (!done) print k "=" v }
+        ' "$file" > "$tmp_file"
+    else
+        printf '%s=%s\n' "$key" "$value" > "$tmp_file"
+    fi
+
+    install -o root -g root -m 600 "$tmp_file" "$file"
+    rm -f "$tmp_file"
+}
+
+write_gigachat_token_atomic() {
+    local token="$1"
+    mkdir -p "$TOKEN_DIR"
+    chown root:litellm "$TOKEN_DIR"
+    chmod 750 "$TOKEN_DIR"
+
+    local tmp_file="$GIGACHAT_TOKEN_FILE.tmp"
+    printf '%s\n' "$token" > "$tmp_file"
+    chmod 640 "$tmp_file"
+    chown root:litellm "$tmp_file"
+    mv "$tmp_file" "$GIGACHAT_TOKEN_FILE"
+}
+
+refresh_gigachat_token_from_env() {
+    local restart_after="${1:-0}"
+    [[ -f "$OAUTH_ENV_FILE" ]] || return 0
+
+    local auth_key=""
+    auth_key="$(sed -n 's/^GIGACHAT_AUTHORIZATION_KEY=//p' "$OAUTH_ENV_FILE" | head -n1)"
+    [[ -n "$auth_key" ]] || return 0
+
+    info_msg "$(msg gigachat_token_refresh)"
+    local access_token=""
+    access_token="$(request_gigachat_access_token "$auth_key")" || error_exit "$(msg gigachat_token_refresh_failed)"
+    write_gigachat_token_atomic "$access_token"
+    info_msg "$(msg gigachat_token_refresh_done)"
+
+    if [[ "$restart_after" -eq 1 ]]; then
+        systemctl restart litellm.service >> "$log_file" 2>&1 || true
+    fi
+}
+
 create_system_user() {
     if id -u litellm >/dev/null 2>&1; then
         info_msg "$(msg user_exists)"
@@ -323,60 +448,221 @@ write_config_and_env() {
     info_msg "$(msg config_generate)"
     mkdir -p "$CONFIG_DIR"
     local primary_llm="${SELECTED_LLMS[0]}"
-
-    # Config: include a stable virtual model for OpenClaw and provider aliases.
+    local primary_alias
+    if [[ "$primary_llm" == "GigaChat" ]]; then
+        primary_alias="gigachat-main"
+    else
+        primary_alias="$(echo "$primary_llm" | tr '[:upper:]' '[:lower:]')-main"
+    fi
+    # Two deterministic config modes:
+    # 1) only GigaChat -> no router_settings
+    # 2) multi-provider -> aliases + router fallbacks
     cat > "$CONFIG_FILE" << EOF
 model_list:
+EOF
+
+    if [[ ${#SELECTED_LLMS[@]} -eq 1 ]]; then
+        cat >> "$CONFIG_FILE" << EOF
   - model_name: openclaw-brain
     litellm_params:
       model: ${LLM_MODELS[$primary_llm]}
-      api_key: os.environ/${primary_llm^^}_API_KEY
+      api_key: $( [[ "$primary_llm" == "GigaChat" ]] && echo "file:$GIGACHAT_TOKEN_FILE" || echo "os.environ/${primary_llm^^}_API_KEY" )
+$( [[ "$primary_llm" == "GigaChat" ]] && echo "      ssl_verify: false" )
 $(if [[ "$primary_llm" == "GigaChat" ]]; then
-    echo "      ssl_verify: false"
+    cat << EOA
+  - model_name: gigachat-2
+    litellm_params:
+      model: ${LLM_MODELS[$primary_llm]}
+      api_key: file:$GIGACHAT_TOKEN_FILE
+      ssl_verify: false
+EOA
 fi)
+EOF
+    else
+        local fallback_aliases=()
+        local generated_aliases=()
+        fallback_aliases+=( "${primary_alias}" )
+        generated_aliases+=( "${primary_alias}" )
+        for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
+            llm="${SELECTED_LLMS[$i]}"
+            alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-fallback"
+            fallback_aliases+=( "$alias_name" )
+            generated_aliases+=( "$alias_name" )
+        done
+
+        # Validate fallback aliases are deterministic and all aliases exist.
+        if [[ "${#fallback_aliases[@]}" -eq 0 ]]; then
+            error_exit "No fallback aliases generated for router mode."
+        fi
+        for alias_name in "${fallback_aliases[@]}"; do
+            if [[ " ${generated_aliases[*]} " != *" ${alias_name} "* ]]; then
+                error_exit "Invalid fallback alias generated: ${alias_name}"
+            fi
+        done
+
+        cat >> "$CONFIG_FILE" << EOF
+  - model_name: openclaw-brain
+    litellm_params:
+      model: ${LLM_MODELS[$primary_llm]}
+      api_key: $( [[ "$primary_llm" == "GigaChat" ]] && echo "file:$GIGACHAT_TOKEN_FILE" || echo "os.environ/${primary_llm^^}_API_KEY" )
+$( [[ "$primary_llm" == "GigaChat" ]] && echo "      ssl_verify: false" )
+  - model_name: ${primary_alias}
+    litellm_params:
+      model: ${LLM_MODELS[$primary_llm]}
+      api_key: $( [[ "$primary_llm" == "GigaChat" ]] && echo "file:$GIGACHAT_TOKEN_FILE" || echo "os.environ/${primary_llm^^}_API_KEY" )
+$( [[ "$primary_llm" == "GigaChat" ]] && echo "      ssl_verify: false" )
 $(for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
     llm="${SELECTED_LLMS[$i]}"
-    alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-fallback"
     echo "  - model_name: ${alias_name}"
     echo "    litellm_params:"
     echo "      model: ${LLM_MODELS[$llm]}"
-    echo "      api_key: os.environ/${llm^^}_API_KEY"
     if [[ "$llm" == "GigaChat" ]]; then
+        echo "      api_key: file:$GIGACHAT_TOKEN_FILE"
         echo "      ssl_verify: false"
+    else
+        echo "      api_key: os.environ/${llm^^}_API_KEY"
     fi
 done)
-
-EOF
-
-    # Fallbacks are only needed for multi-provider setups.
-    if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
-        cat >> "$CONFIG_FILE" << EOF
 router_settings:
-  routing_strategy: simple-shuffle
   fallbacks:
-    - model: openclaw-brain
-      fallbacks:
-$(for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
-    llm="${SELECTED_LLMS[$i]}"
-    echo "        - $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    openclaw-brain:
+$(for alias_name in "${fallback_aliases[@]}"; do
+    echo "      - ${alias_name}"
 done)
 EOF
     fi
 
-    # Env file (secrets stored in EnvironmentFile; permissions tight)
+    # Runtime env for LiteLLM (no OAuth authorization key here)
     mkdir -p "$(dirname "$ENV_FILE")"
     umask 077
     cat > "$ENV_FILE" << EOF
 $(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
+    if [[ "$llm" != "GigaChat" ]]; then
+        echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
+    fi
 done)
 EOF
     umask 022
     chown root:root "$ENV_FILE"
     chmod 600 "$ENV_FILE"
 
+    # OAuth env only for refresh unit
+    if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]]; then
+        umask 077
+        cat > "$OAUTH_ENV_FILE" << EOF
+GIGACHAT_AUTHORIZATION_KEY=${LLM_API_KEYS["GigaChat"]}
+EOF
+        umask 022
+        chown root:root "$OAUTH_ENV_FILE"
+        chmod 600 "$OAUTH_ENV_FILE"
+    else
+        rm -f "$OAUTH_ENV_FILE" || true
+    fi
+
     # Ownership for runtime user
     chown -R litellm:litellm "$INSTALL_DIR"
+}
+
+write_token_refresh_assets() {
+    [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]] || return 0
+
+    info_msg "$(msg token_timer_setup)"
+    cat > "$TOKEN_REFRESH_SCRIPT" << EOF
+#!/bin/bash
+set -euo pipefail
+
+ENV_FILE="$ENV_FILE"
+OAUTH_URL="$GIGACHAT_OAUTH_URL"
+SCOPE="$GIGACHAT_OAUTH_SCOPE"
+OAUTH_ENV_FILE="$OAUTH_ENV_FILE"
+RESTART_AFTER=0
+if [[ "\${1:-}" == "--restart" ]]; then
+  RESTART_AFTER=1
+fi
+
+[[ -f "\$OAUTH_ENV_FILE" ]] || exit 0
+AUTH_KEY="\$(sed -n 's/^GIGACHAT_AUTHORIZATION_KEY=//p' "\$OAUTH_ENV_FILE" | head -n1)"
+[[ -n "\$AUTH_KEY" ]] || exit 0
+
+sleep \$((RANDOM % 16))
+RESP="\$(curl --silent --show-error --fail --connect-timeout 5 --max-time 15 --request POST "\$OAUTH_URL" \\
+  --header "Authorization: Basic \${AUTH_KEY}" \\
+  --header "Content-Type: application/x-www-form-urlencoded" \\
+  --data "scope=\$SCOPE")"
+TOKEN="\$(printf '%s' "\$RESP" | jq -r '.access_token // empty')"
+EXPIRES_RAW="\$(printf '%s' "\$RESP" | jq -r '.expires_at // empty')"
+[[ -n "\$TOKEN" && "\$EXPIRES_RAW" =~ ^[0-9]+$ ]] || { echo "refresh failed: invalid OAuth response"; exit 1; }
+if (( EXPIRES_RAW > 1000000000000 )); then
+  EXPIRES_SEC=\$((EXPIRES_RAW / 1000))
+  echo "refresh info: expires_at parsed as ms"
+elif (( EXPIRES_RAW > 1000000000 && EXPIRES_RAW < 1000000000000 )); then
+  EXPIRES_SEC=\$EXPIRES_RAW
+  echo "refresh info: expires_at parsed as sec"
+else
+  echo "refresh failed: unsupported expires_at format: \$EXPIRES_RAW"
+  exit 1
+fi
+NOW_SEC="\$(date +%s)"
+TTL_SEC=\$((EXPIRES_SEC - NOW_SEC))
+MIN_TTL=$((TOKEN_REFRESH_INTERVAL_SEC + 300))
+if (( MIN_TTL < 900 )); then MIN_TTL=900; fi
+echo "refresh info: expires_at=\$EXPIRES_SEC ttl=\$TTL_SEC min_ttl=\$MIN_TTL"
+if (( TTL_SEC < MIN_TTL )); then
+  echo "refresh failed: ttl too low (\$TTL_SEC)"
+  exit 1
+fi
+
+TOKEN_DIR="$TOKEN_DIR"
+TOKEN_FILE="$GIGACHAT_TOKEN_FILE"
+mkdir -p "\$TOKEN_DIR"
+chown root:litellm "\$TOKEN_DIR"
+chmod 750 "\$TOKEN_DIR"
+printf '%s\n' "\$TOKEN" > "\${TOKEN_FILE}.tmp"
+chmod 640 "\${TOKEN_FILE}.tmp"
+chown root:litellm "\${TOKEN_FILE}.tmp"
+mv "\${TOKEN_FILE}.tmp" "\$TOKEN_FILE"
+echo "refresh success: token file updated"
+
+if [[ "\$RESTART_AFTER" -eq 1 ]]; then
+  systemctl restart litellm.service
+fi
+EOF
+    chmod 700 "$TOKEN_REFRESH_SCRIPT"
+    chown root:root "$TOKEN_REFRESH_SCRIPT"
+
+    cat > "$TOKEN_REFRESH_SERVICE_FILE" << EOF
+[Unit]
+Description=Refresh GigaChat OAuth access token for LiteLLM
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=$OAUTH_ENV_FILE
+ExecStart=$TOKEN_REFRESH_SCRIPT
+Restart=on-failure
+RestartSec=60
+EOF
+
+    cat > "$TOKEN_REFRESH_TIMER_FILE" << EOF
+[Unit]
+Description=Periodic GigaChat token refresh timer
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=22min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl daemon-reload >> "$log_file" 2>&1
+    systemctl enable --now litellm-token-refresh.timer >> "$log_file" 2>&1
 }
 
 write_systemd_service() {
@@ -433,6 +719,8 @@ do_update() {
     pip install --upgrade --no-cache-dir "litellm[proxy]>=1.81.12" >> "$log_file" 2>&1
     deactivate
 
+    refresh_gigachat_token_from_env 0
+
     # restart
     systemctl restart litellm.service >> "$log_file" 2>&1 || true
     sleep 5
@@ -448,6 +736,12 @@ do_update() {
     exit 0
 }
 
+do_refresh_token() {
+    refresh_gigachat_token_from_env "$RESTART_SERVICE"
+    cleanup
+    exit 0
+}
+
 do_uninstall() {
     local confirm_uninstall=""
     ask "$(msg uninstall_confirm)" confirm_uninstall ""
@@ -455,13 +749,19 @@ do_uninstall() {
         # Stop and remove service artifacts
         systemctl stop litellm.service >> "$log_file" 2>&1 || true
         systemctl disable litellm.service >> "$log_file" 2>&1 || true
+        systemctl stop litellm-token-refresh.timer >> "$log_file" 2>&1 || true
+        systemctl disable litellm-token-refresh.timer >> "$log_file" 2>&1 || true
         rm -f "$SYSTEMD_SERVICE_FILE" || true
+        rm -f "$TOKEN_REFRESH_SERVICE_FILE" || true
+        rm -f "$TOKEN_REFRESH_TIMER_FILE" || true
         systemctl daemon-reload >> "$log_file" 2>&1 || true
 
         # Remove installed files and runtime env
         rm -rf "$INSTALL_DIR" || true
         rm -rf "/etc/litellm" || true
+        rm -rf "$TOKEN_DIR" || true
         rm -f "$ENV_FILE" || true
+        rm -f "$OAUTH_ENV_FILE" || true
 
         # Remove dedicated system account/group if present
         if id -u litellm >/dev/null 2>&1; then
@@ -484,6 +784,9 @@ if [[ "${MODE:-}" == "update" ]]; then
 fi
 if [[ "${MODE:-}" == "uninstall" ]]; then
     do_uninstall
+fi
+if [[ "${MODE:-}" == "refresh-token" ]]; then
+    do_refresh_token
 fi
 
 # --- Main flow ---
@@ -562,6 +865,9 @@ if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     exit 0
 fi
 
+# Ensure group/user exists before writing token file with root:litellm ownership.
+create_system_user
+
 # 6. Collect API keys (visible input to confirm paste)
 declare -A LLM_API_KEYS
 declare -A LLM_MODELS
@@ -573,7 +879,11 @@ step_header "API Keys"
 for llm in "${SELECTED_LLMS[@]}"; do
     sub_header "$(msg title_api_key "$llm")"
     current_key=""
-    ask "$(msg api_key_prompt "$llm")" current_key ""
+    if [[ "$llm" == "GigaChat" ]]; then
+        ask "$(msg gigachat_auth_prompt)" current_key ""
+    else
+        ask "$(msg api_key_prompt "$llm")" current_key ""
+    fi
     if [[ -n "$current_key" ]]; then
         printf "Entered API Key: %s\n" "$current_key" > /dev/tty
     fi
@@ -585,6 +895,13 @@ for llm in "${SELECTED_LLMS[@]}"; do
     fi
     LLM_API_KEYS["$llm"]="$current_key"
 done
+
+if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]]; then
+    info_msg "$(msg gigachat_token_refresh)"
+    initial_gigachat_token="$(request_gigachat_access_token "${LLM_API_KEYS["GigaChat"]}")" || error_exit "$(msg gigachat_token_refresh_failed)"
+    write_gigachat_token_atomic "$initial_gigachat_token"
+    info_msg "$(msg gigachat_token_refresh_done)"
+fi
 
 # 7. Priority reorder
 if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
@@ -634,6 +951,10 @@ fi
 # 8. Install LiteLLM
 info_msg "$(msg litellm_install)"
 mkdir -p "$INSTALL_DIR"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
+if [[ -r "$SCRIPT_SOURCE" ]]; then
+    install -m 755 "$SCRIPT_SOURCE" "$INSTALL_DIR/install.sh" >> "$log_file" 2>&1 || true
+fi
 info_msg "$(msg venv_create)"
 python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
@@ -641,10 +962,10 @@ pip install --upgrade pip >> "$log_file" 2>&1 || error_exit "$(msg litellm_insta
 pip install --upgrade --no-cache-dir "litellm[proxy]>=1.81.12" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
 deactivate
 
-# 9. Create runtime user + config/env
-create_system_user
+# 9. Create config/env
 write_config_and_env
 write_systemd_service
+write_token_refresh_assets
 
 # 10. Start & check
 info_msg "$(msg systemd_start)"
