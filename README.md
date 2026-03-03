@@ -1,6 +1,6 @@
-[English](#english) | [Русский](#russian)
+[English](#english-version) | [Русский](#russian-version)
 
-# English
+# English Version
 
 # LiteLLM & OpenClaw Installer
 
@@ -89,7 +89,7 @@ This project is distributed under the MIT License. See the [LICENSE](LICENSE) fi
 
 ---
 
-# Русский
+# Русский Version
 
 # LiteLLM & OpenClaw Installer (Русская версия)
 
