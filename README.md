@@ -1,3 +1,7 @@
+[English](#english) | [Русский](#russian)
+
+# English
+
 # LiteLLM & OpenClaw Installer
 
 This script automates the installation and configuration of [LiteLLM Proxy](https://litellm.ai/) with support for multiple Large Language Models (LLM), including GigaChat, OpenAI, Anthropic, and DeepSeek, on Debian/Ubuntu operating systems. After successfully setting up LiteLLM, the script optionally offers to run the official [OpenClaw](https://openclaw.ai/) installer.
@@ -12,7 +16,11 @@ LiteLLM will be configured as a `systemd` service, ensuring its automatic startu
 ## Features
 
 *   **OS Support:** Debian and Ubuntu.
-*   **Interactive LLM Selection:** Choose which LLMs you want to use (GigaChat, OpenAI, Anthropic, DeepSeek).
+*   **Interactive LLM Selection:** Choose which LLMs you want to use:
+    *   [GigaChat](https://developers.sber.ru/docs/ru/gigachat/models)
+    *   [OpenAI](https://platform.openai.com/docs/models)
+    *   [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview)
+    *   [DeepSeek](https://platform.deepseek.com/docs)
 *   **API Key Validation:** The script validates entered API keys immediately after input.
 *   **Configurable LLM Priority (Fallback):** Define the order of LLM usage in case the primary model is unavailable.
 *   **LiteLLM Port Selection:** Specify the desired port for the LiteLLM Proxy.
@@ -70,16 +78,18 @@ sudo /opt/litellm/install.sh --uninstall
 
 ## Supported LLMs
 
-*   **GigaChat (Lite):** `gigachat/GigaChat-2`
-*   **OpenAI (GPT-5-nano):** `openai/gpt-5-nano`
-*   **Anthropic (Haiku 4.5):** `anthropic/claude-haiku-4-5`
-*   **DeepSeek (deepseek-chat):** `deepseek/deepseek-chat`
+*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
+*   **[OpenAI (GPT-5-nano)](https://platform.openai.com/docs/models):** `openai/gpt-5-nano`
+*   **[Anthropic (Haiku 4.5)](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-haiku-4-5`
+*   **[DeepSeek (deepseek-chat)](https://platform.deepseek.com/docs):** `deepseek/deepseek-chat`
 
 ## License
 
 This project is distributed under the MIT License. See the [LICENSE](LICENSE) file for more information.
 
 ---
+
+# Русский
 
 # LiteLLM & OpenClaw Installer (Русская версия)
 
@@ -95,7 +105,11 @@ LiteLLM будет настроен как системный сервис (`sys
 ## Возможности
 
 *   **Поддержка ОС:** Debian и Ubuntu.
-*   **Интерактивный выбор LLM:** Выберите, какие LLM вы хотите использовать (GigaChat, OpenAI, Anthropic, DeepSeek).
+*   **Интерактивный выбор LLM:** Выберите, какие LLM вы хотите использовать:
+    *   [GigaChat](https://developers.sber.ru/docs/ru/gigachat/models)
+    *   [OpenAI](https://platform.openai.com/docs/models)
+    *   [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview)
+    *   [DeepSeek](https://platform.deepseek.com/docs)
 *   **Валидация API-ключей:** Скрипт проверяет введенные API-ключи на валидность сразу после ввода.
 *   **Настраиваемый приоритет LLM (Fallback):** Определите порядок использования LLM в случае недоступности основной модели.
 *   **Выбор порта LiteLLM:** Укажите желаемый порт для работы LiteLLM Proxy.
@@ -153,10 +167,10 @@ sudo /opt/litellm/install.sh --uninstall
 
 ## Поддерживаемые LLM
 
-*   **GigaChat (Lite):** `gigachat/GigaChat-2`
-*   **OpenAI (GPT-5-nano):** `openai/gpt-5-nano`
-*   **Anthropic (Haiku 4.5):** `anthropic/claude-haiku-4-5`
-*   **DeepSeek (deepseek-chat):** `deepseek/deepseek-chat`
+*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
+*   **[OpenAI (GPT-5-nano)](https://platform.openai.com/docs/models):** `openai/gpt-5-nano`
+*   **[Anthropic (Haiku 4.5)](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-haiku-4-5`
+*   **[DeepSeek (deepseek-chat)](https://platform.deepseek.com/docs):** `deepseek/deepseek-chat`
 
 ## Лицензия
 
