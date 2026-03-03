@@ -20,6 +20,8 @@ LiteLLM will be configured as a `systemd` service, ensuring its automatic startu
     *   [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview)
     *   [DeepSeek](https://platform.deepseek.com/docs)
 *   **API Key Validation:** The script validates entered API keys immediately after input.
+*   **Network-Aware Validation:** API key checks include timeouts and report network errors.
+*   **Retry Limits:** Invalid API keys and priority input are limited to 3 attempts.
 *   **Configurable LLM Priority (Fallback):** Define the order of LLM usage in case the primary model is unavailable.
 *   **LiteLLM Port Selection:** Specify the desired port for the LiteLLM Proxy.
 *   **Automatic Master Key Generation:** If not provided, the LiteLLM master key will be automatically generated.
@@ -43,8 +45,9 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 3.  **LiteLLM Master Key:** Enter the LiteLLM master key or press Enter for automatic generation.
 4.  **LLM Selection:** Choose the numbers of the LLMs you want to use (e.g., `1 2 4` for GigaChat, OpenAI, and DeepSeek).
 5.  **API Key Entry:** For each selected LLM, the script will prompt for the corresponding API keys and validate them.
-6.  **Set Priorities:** If multiple LLMs are selected, the script will ask you to set their usage order (priority/fallback).
-7.  **OpenClaw Installation (optional):** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
+6.  **API Key Retries:** Invalid keys can be retried up to 3 times per provider; network errors are reported.
+7.  **Set Priorities:** If multiple LLMs are selected, the script will ask you to set their usage order (priority/fallback). Invalid input is limited to 3 attempts.
+8.  **OpenClaw Installation (optional):** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
 
 ## Usage
 
