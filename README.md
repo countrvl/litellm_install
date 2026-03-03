@@ -49,6 +49,7 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 7.  **Set Priorities:** If multiple LLMs are selected, the script will ask you to set their usage order (priority/fallback). Invalid input is limited to 3 attempts.
 8.  **OpenClaw Installation (optional):** After LiteLLM setup, the script will offer to run the official OpenClaw installer.
 
+
 ## Usage
 
 After successful installation, LiteLLM will be accessible at `http://localhost:<YOUR_LITELLM_PORT>`.
