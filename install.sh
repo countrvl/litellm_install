@@ -1,24 +1,22 @@
 #!/bin/bash
+set -euo pipefail
 
 # --- Localization ---
 
 # Default language
 LANG_CODE="en"
 
-# Function to set language based on locale or argument
 set_language() {
-    if [[ -n "$1" ]]; then
+    if [[ -n "${1:-}" ]]; then
         LANG_CODE="$1"
     else
-        # Detect system locale
-        LOCALE=$(locale | grep LANG | cut -d= -f2 | cut -d. -f1 | tr '[:upper:]' '[:lower:]')
+        LOCALE=$(locale | grep -E '^LANG=' | cut -d= -f2 | cut -d. -f1 | tr '[:upper:]' '[:lower:]' || true)
         if [[ "$LOCALE" == "ru_ru" || "$LOCALE" == "ru" ]]; then
             LANG_CODE="ru"
         fi
     fi
 }
 
-# English messages
 declare -A EN_MESSAGES
 EN_MESSAGES["welcome"]="Welcome to the LiteLLM & OpenClaw Installer!"
 EN_MESSAGES["os_check"]="Checking OS compatibility..."
@@ -31,18 +29,15 @@ EN_MESSAGES["port_prompt"]="Enter the port for LiteLLM Proxy (default: 4000): "
 EN_MESSAGES["port_invalid"]="Invalid port. Please enter a number between 1024 and 65535."
 EN_MESSAGES["port_in_use"]="Port %s is already in use. Please choose another port."
 EN_MESSAGES["master_key_prompt"]="Enter a strong Master Key for LiteLLM (press Enter to auto-generate): "
-EN_MESSAGES["master_key_generated"]="Master Key auto-generated: %s"
-EN_MESSAGES["llm_selection_prompt"]="Select LLM providers to configure (use SPACE to select, ENTER to confirm):"
+EN_MESSAGES["master_key_generated"]="Master Key auto-generated."
+EN_MESSAGES["llm_selection_prompt"]="Select LLM providers to configure (enter numbers separated by spaces, e.g. 1 3):"
 EN_MESSAGES["llm_none_selected"]="No LLM providers selected. LiteLLM will not be configured."
 EN_MESSAGES["api_key_prompt"]="Enter API Key for %s (press Enter to skip): "
-EN_MESSAGES["api_key_invalid"]="Invalid API Key for %s. Please check it and try again, or press Enter to skip."
 EN_MESSAGES["api_key_skipped"]="API Key for %s skipped."
-EN_MESSAGES["api_key_retry"]="Too many invalid attempts for %s. Skipping."
 EN_MESSAGES["priority_prompt"]="Enter the priority order for selected LLMs (e.g., 1 2 3 for %s): "
 EN_MESSAGES["priority_invalid"]="Invalid priority order. Please enter unique numbers for each selected LLM."
 EN_MESSAGES["priority_retry"]="Too many invalid attempts. Exiting."
-EN_MESSAGES["input_required"]="INPUT REQUIRED"
-EN_MESSAGES["entered_value"]="Entered: %s"
+EN_MESSAGES["entered_value"]="Entered."
 EN_MESSAGES["entered_empty"]="Entered: (empty)"
 EN_MESSAGES["title_port"]="LiteLLM Port"
 EN_MESSAGES["title_master_key"]="LiteLLM Master Key"
@@ -60,7 +55,7 @@ EN_MESSAGES["systemd_error"]="LiteLLM service failed to start. Check logs with '
 EN_MESSAGES["litellm_ready"]="LiteLLM Proxy is running and accessible at http://localhost:%s."
 EN_MESSAGES["openclaw_config_info"]="To connect OpenClaw to LiteLLM, use these settings:"
 EN_MESSAGES["api_base"]="API Base: http://localhost:%s/openai/v1"
-EN_MESSAGES["master_key"]="Master Key: %s"
+EN_MESSAGES["master_key"]="Master Key: (hidden)"
 EN_MESSAGES["openclaw_model"]="Model for OpenClaw: openclaw-brain"
 EN_MESSAGES["openclaw_install_prompt"]="Do you want to launch the official OpenClaw installer? (y/n): "
 EN_MESSAGES["openclaw_install_start"]="Transferring control to the OpenClaw installer..."
@@ -74,8 +69,12 @@ EN_MESSAGES["script_complete"]="Script finished."
 EN_MESSAGES["error_occurred"]="An error occurred. Exiting."
 EN_MESSAGES["cleanup_message"]="Cleaning up temporary files..."
 EN_MESSAGES["lang_flag_invalid"]="Invalid language code. Use 'en' or 'ru'."
+EN_MESSAGES["health_failed"]="LiteLLM started but health-check failed at /health."
+EN_MESSAGES["user_create"]="Creating system user for LiteLLM..."
+EN_MESSAGES["user_exists"]="System user for LiteLLM already exists."
+EN_MESSAGES["venv_create"]="Creating Python venv..."
+EN_MESSAGES["service_user"]="Running systemd service as unprivileged user: litellm"
 
-# Russian messages
 declare -A RU_MESSAGES
 RU_MESSAGES["welcome"]="Добро пожаловать в установщик LiteLLM и OpenClaw!"
 RU_MESSAGES["os_check"]="Проверка совместимости ОС..."
@@ -87,19 +86,16 @@ RU_MESSAGES["dependencies_error"]="Не удалось установить за
 RU_MESSAGES["port_prompt"]="Введите порт для LiteLLM Proxy (по умолчанию: 4000): "
 RU_MESSAGES["port_invalid"]="Неверный порт. Введите число от 1024 до 65535."
 RU_MESSAGES["port_in_use"]="Порт %s уже занят. Выберите другой порт."
-RU_MESSAGES["master_key_prompt"]="Введите надежный Master Key для LiteLLM (нажмите Enter для автогенерации): "
-RU_MESSAGES["master_key_generated"]="Master Key сгенерирован автоматически: %s"
-RU_MESSAGES["llm_selection_prompt"]="Выберите провайдеров LLM для настройки (используйте SPACE для выбора, ENTER для подтверждения):"
+RU_MESSAGES["master_key_prompt"]="Введите надежный Master Key для LiteLLM (Enter для автогенерации): "
+RU_MESSAGES["master_key_generated"]="Master Key сгенерирован автоматически."
+RU_MESSAGES["llm_selection_prompt"]="Выберите провайдеров LLM (введите номера через пробел, напр. 1 3):"
 RU_MESSAGES["llm_none_selected"]="Провайдеры LLM не выбраны. LiteLLM не будет настроен."
 RU_MESSAGES["api_key_prompt"]="Введите API Key для %s (Enter чтобы пропустить): "
-RU_MESSAGES["api_key_invalid"]="Неверный API Key для %s. Проверьте его и попробуйте снова, или нажмите Enter, чтобы пропустить."
 RU_MESSAGES["api_key_skipped"]="API Key для %s пропущен."
-RU_MESSAGES["api_key_retry"]="Слишком много неверных попыток для %s. Пропускаю."
 RU_MESSAGES["priority_prompt"]="Введите порядок приоритета для выбранных LLM (например, 1 2 3 для %s): "
 RU_MESSAGES["priority_invalid"]="Неверный порядок приоритета. Введите уникальные номера для каждой выбранной LLM."
 RU_MESSAGES["priority_retry"]="Слишком много неверных попыток. Выход."
-RU_MESSAGES["input_required"]="ТРЕБУЕТСЯ ВВОД"
-RU_MESSAGES["entered_value"]="Введено: %s"
+RU_MESSAGES["entered_value"]="Введено."
 RU_MESSAGES["entered_empty"]="Введено: (пусто)"
 RU_MESSAGES["title_port"]="Порт LiteLLM"
 RU_MESSAGES["title_master_key"]="Master Key LiteLLM"
@@ -108,20 +104,20 @@ RU_MESSAGES["title_api_key"]="API Key для %s"
 RU_MESSAGES["title_priority"]="Приоритет LLM"
 RU_MESSAGES["title_openclaw"]="Установка OpenClaw"
 RU_MESSAGES["litellm_install"]="Установка LiteLLM..."
-RU_MESSAGES["litellm_install_error"]="Не удалось установить LiteLLM. Проверьте подключение к интернету и попробуйте снова."
+RU_MESSAGES["litellm_install_error"]="Не удалось установить LiteLLM. Проверьте интернет и попробуйте снова."
 RU_MESSAGES["config_generate"]="Генерация конфигурации LiteLLM..."
 RU_MESSAGES["systemd_setup"]="Настройка LiteLLM как системного сервиса..."
 RU_MESSAGES["systemd_start"]="Запуск сервиса LiteLLM..."
 RU_MESSAGES["systemd_status"]="Проверка статуса сервиса LiteLLM..."
-RU_MESSAGES["systemd_error"]="Сервис LiteLLM не запустился. Проверьте логи командой 'journalctl -u litellm.service'."
+RU_MESSAGES["systemd_error"]="Сервис LiteLLM не запустился. Проверьте логи: 'journalctl -u litellm.service'."
 RU_MESSAGES["litellm_ready"]="LiteLLM Proxy запущен и доступен по адресу http://localhost:%s."
-RU_MESSAGES["openclaw_config_info"]="Для подключения OpenClaw к LiteLLM используйте следующие настройки:"
+RU_MESSAGES["openclaw_config_info"]="Для подключения OpenClaw к LiteLLM используйте:"
 RU_MESSAGES["api_base"]="API Base: http://localhost:%s/openai/v1"
-RU_MESSAGES["master_key"]="Master Key: %s"
+RU_MESSAGES["master_key"]="Master Key: (скрыт)"
 RU_MESSAGES["openclaw_model"]="Модель для OpenClaw: openclaw-brain"
 RU_MESSAGES["openclaw_install_prompt"]="Хотите запустить официальный инсталлятор OpenClaw? (y/n): "
 RU_MESSAGES["openclaw_install_start"]="Передаю управление инсталлятору OpenClaw..."
-RU_MESSAGES["openclaw_install_skipped"]="Установка OpenClaw пропущена. Вы можете запустить её позже вручную."
+RU_MESSAGES["openclaw_install_skipped"]="Установка OpenClaw пропущена. Можно запустить позже вручную."
 RU_MESSAGES["uninstall_confirm"]="Вы уверены, что хотите удалить LiteLLM и все связанные файлы? (y/n): "
 RU_MESSAGES["uninstall_aborted"]="Удаление отменено."
 RU_MESSAGES["uninstall_complete"]="Удаление LiteLLM завершено."
@@ -131,17 +127,21 @@ RU_MESSAGES["script_complete"]="Скрипт завершен."
 RU_MESSAGES["error_occurred"]="Произошла ошибка. Выход."
 RU_MESSAGES["cleanup_message"]="Очистка временных файлов..."
 RU_MESSAGES["lang_flag_invalid"]="Неверный код языка. Используйте 'en' или 'ru'."
+RU_MESSAGES["health_failed"]="LiteLLM запустился, но health-check /health не прошёл."
+RU_MESSAGES["user_create"]="Создаю системного пользователя для LiteLLM..."
+RU_MESSAGES["user_exists"]="Системный пользователь для LiteLLM уже существует."
+RU_MESSAGES["venv_create"]="Создаю Python venv..."
+RU_MESSAGES["service_user"]="systemd сервис запускается от непривилегированного пользователя: litellm"
 
-# Function to get translated message
 msg() {
     local key="$1"
     shift
     local template=""
     if [[ "$LANG_CODE" == "ru" ]]; then
-        template="${RU_MESSAGES[$key]}"
+        template="${RU_MESSAGES[$key]:-}"
     fi
     if [[ -z "$template" ]]; then
-        template="${EN_MESSAGES[$key]}"
+        template="${EN_MESSAGES[$key]:-}"
     fi
     if [[ -z "$template" ]]; then
         template="$key"
@@ -149,33 +149,15 @@ msg() {
     printf "$template" "$@"
 }
 
-# --- Logging and Messaging Functions ---
+# --- Logging ---
 log_file="/var/log/litellm_installer.log"
-
 if [[ ! -w "$(dirname "$log_file")" ]]; then
     log_file="/tmp/litellm_installer.log"
 fi
 
-info_msg() {
-    if [[ -z "$1" ]]; then
-        return
-    fi
-    echo -e "\e[32m[INFO]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"
-}
-
-warn_msg() {
-    if [[ -z "$1" ]]; then
-        return
-    fi
-    echo -e "\e[33m[WARN]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"
-}
-
-error_msg() {
-    if [[ -z "$1" ]]; then
-        return
-    fi
-    echo -e "\e[31m[ERROR]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file"
-}
+info_msg() { [[ -n "${1:-}" ]] && echo -e "\e[32m[INFO]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" >/dev/null; }
+warn_msg() { [[ -n "${1:-}" ]] && echo -e "\e[33m[WARN]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" >/dev/null; }
+error_msg(){ [[ -n "${1:-}" ]] && echo -e "\e[31m[ERROR]\e[0m $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" >/dev/null; }
 
 info_msg "Log file: $log_file"
 
@@ -194,6 +176,14 @@ sub_header() {
     printf "\n-- %s --\n" "$title" > /dev/tty
 }
 
+TEMP_DIR=""
+cleanup() {
+    info_msg "$(msg cleanup_message)"
+    if [[ -n "$TEMP_DIR" ]]; then
+        rm -rf "$TEMP_DIR" || true
+    fi
+}
+
 error_exit() {
     local message="${1:-$(msg error_occurred)}"
     error_msg "$message"
@@ -201,27 +191,16 @@ error_exit() {
     exit 1
 }
 
-cleanup() {
-    info_msg "$(msg cleanup_message)"
-    if [[ -n "$TEMP_DIR" ]]; then
-        rm -rf "$TEMP_DIR"
-    fi
-}
+trap 'error_exit' ERR
+trap 'error_exit "Interrupted."' INT TERM
 
+# --- Input helpers (TTY-safe, no secret echo to logs) ---
 ask() {
-    local title="$1"
-    local prompt="$2"
-    local __var="$3"
-    local default_value="$4"
+    local prompt="$1"
+    local __var="$2"
+    local default_value="${3:-}"
     local input=""
-    local required_msg=""
 
-    if [[ -z "$title" ]]; then
-        title="Question"
-    fi
-    if [[ -z "$prompt" ]]; then
-        prompt="Enter value"
-    fi
     if [[ -n "$default_value" ]]; then
         printf "%s [%s]: " "$prompt" "$default_value" > /dev/tty
     else
@@ -236,35 +215,63 @@ ask() {
     if [[ -z "$input" ]]; then
         printf "%s\n" "$(msg entered_empty)" > /dev/tty
     else
-        entered_msg=$(msg entered_value "$input")
-        printf "%s\n" "$entered_msg" > /dev/tty
+        printf "%s\n" "$(msg entered_value)" > /dev/tty
     fi
 
     printf -v "$__var" '%s' "$input"
 }
 
-# Parse command line arguments for language
+ask_secret() {
+    local prompt="$1"
+    local __var="$2"
+    local default_value="${3:-}"
+    local input=""
+
+    if [[ -n "$default_value" ]]; then
+        printf "%s [%s]: " "$prompt" "$default_value" > /dev/tty
+    else
+        printf "%s" "$prompt" > /dev/tty
+    fi
+
+    stty -echo < /dev/tty
+    IFS= read -r input < /dev/tty
+    stty echo < /dev/tty
+    printf "\n" > /dev/tty
+
+    if [[ -z "$input" && -n "$default_value" ]]; then
+        input="$default_value"
+    fi
+
+    if [[ -z "$input" ]]; then
+        printf "%s\n" "$(msg entered_empty)" > /dev/tty
+    else
+        printf "%s\n" "$(msg entered_value)" > /dev/tty
+    fi
+
+    printf -v "$__var" '%s' "$input"
+}
+
+# Parse command line arguments for language and mode flags
+LANG_ARG=""
+MODE=""
 for arg in "$@"; do
     case $arg in
-        --lang=*) # Check for --lang=en or --lang=ru
+        --lang=*)
             LANG_ARG="${arg#*=}"
             if [[ "$LANG_ARG" == "en" || "$LANG_ARG" == "ru" ]]; then
                 set_language "$LANG_ARG"
             else
                 error_exit "$(msg lang_flag_invalid)"
             fi
-            shift # Remove argument from processing
             ;;
+        --update) MODE="update" ;;
+        --uninstall) MODE="uninstall" ;;
     esac
 done
 
-# If language not set by flag, detect from locale
 if [[ -z "$LANG_ARG" ]]; then
     set_language
 fi
-
-trap 'error_exit' ERR
-trap 'error_exit "Interrupted."' INT TERM
 
 # --- Variables ---
 INSTALL_DIR="/opt/litellm"
@@ -275,10 +282,17 @@ SYSTEMD_SERVICE_FILE="/etc/systemd/system/litellm.service"
 ENV_FILE="/etc/litellm/litellm.env"
 OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
 
-# Default values
 LITELLM_PORT=4000
 LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
+LITELLM_VERSION="1.40.14"   # pin this (change only after testing)
+
+# Provider models (adjust if you want different defaults)
+declare -A DEFAULT_LLM_MODELS
+DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat"
+DEFAULT_LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
+DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
+DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
 
 model_name_to_llm() {
     case "$1" in
@@ -290,151 +304,165 @@ model_name_to_llm() {
     esac
 }
 
+# Function to check if a port is in use (robust)
+is_port_in_use() {
+    ss -tuln | grep -qE "[:.]$1[[:space:]]" || ss -tuln | grep -q ":$1 "
+}
+
+generate_random_string() {
+    head /dev/urandom | tr -dc A-Za-z0-9_ | head -c 32
+}
+
+create_system_user() {
+    if id -u litellm >/dev/null 2>&1; then
+        info_msg "$(msg user_exists)"
+        return 0
+    fi
+    info_msg "$(msg user_create)"
+    useradd --system --no-create-home --shell /usr/sbin/nologin litellm
+}
+
 write_config_and_env() {
     info_msg "$(msg config_generate)"
     mkdir -p "$CONFIG_DIR"
+
+    # Config: modern routing style, correct os.environ syntax (no quotes)
     cat > "$CONFIG_FILE" << EOF
 model_list:
 $(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "  - model_name: $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    echo "  - model_name: ${alias_name}"
     echo "    litellm_params:"
     echo "      model: ${LLM_MODELS[$llm]}"
-    if [[ "$llm" == "GigaChat" ]]; then
-        echo "      ssl_verify: False"
-    fi
-    echo "      api_key: \"os.environ/${llm^^}_API_KEY\""
+    echo "      api_key: os.environ/${llm^^}_API_KEY"
 done)
 
-litellm_settings:
-  master_key: "$LITELLM_MASTER_KEY"
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}
 
 router_settings:
-  model_group_alias:
+  routing_strategy: simple-shuffle
+  fallbacks:
     openclaw-brain:
-      - $(for llm in "${SELECTED_LLMS[@]}"; do echo -n "\"$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite\" "; done | sed 's/ $//')
+$(for llm in "${SELECTED_LLMS[@]}"; do
+    echo "      - $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+done)
 EOF
 
-    info_msg "$(msg systemd_setup)"
-    sudo mkdir -p "$(dirname "$ENV_FILE")"
-    sudo chown root:root "$(dirname "$ENV_FILE")"
+    # Env file (secrets stored in EnvironmentFile; permissions tight)
+    mkdir -p "$(dirname "$ENV_FILE")"
     umask 077
-    openai_selected=0
-    for llm in "${SELECTED_LLMS[@]}"; do
-        if [[ "$llm" == "OpenAI" ]]; then
-            openai_selected=1
-            break
-        fi
-    done
     cat > "$ENV_FILE" << EOF
-LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
-$(if [[ "$openai_selected" -eq 0 ]]; then echo "OPENAI_API_KEY=dummy"; fi)
+LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
 $(for llm in "${SELECTED_LLMS[@]}"; do
     echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
 done)
 EOF
     umask 022
-    sudo chown root:root "$ENV_FILE"
-    sudo chmod 600 "$ENV_FILE"
+    chown root:root "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+
+    # Ownership for runtime user
+    chown -R litellm:litellm "$INSTALL_DIR"
 }
 
-# --- Helper Functions ---
+write_systemd_service() {
+    info_msg "$(msg systemd_setup)"
+    info_msg "$(msg service_user)"
 
-# Function to check if a port is in use
-is_port_in_use() {
-    sudo ss -tuln "sport = :$1" | tail -n +2 | grep -q .
+    cat > "$SYSTEMD_SERVICE_FILE" << EOF
+[Unit]
+Description=LiteLLM Proxy Service
+After=network.target
+
+[Service]
+Type=simple
+User=litellm
+Group=litellm
+WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$VENV_DIR/bin/litellm --config $CONFIG_FILE --port $LITELLM_PORT
+Restart=on-failure
+RestartSec=5
+
+# Hardening (reasonable defaults)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload >> "$log_file" 2>&1
+    systemctl enable litellm.service >> "$log_file" 2>&1
 }
 
-# Function to generate a random string
-generate_random_string() {
-    head /dev/urandom | tr -dc A-Za-z0-9_ | head -c 32
+health_check() {
+    # /health is expected on LiteLLM proxy
+    if ! curl --silent --fail "http://localhost:${LITELLM_PORT}/health" >/dev/null 2>&1; then
+        error_exit "$(msg health_failed)"
+    fi
 }
 
-# Function to validate API Key
-validate_api_key() {
-    local provider_name="$1"
-    local api_key="$2"
+# --- Mode handlers ---
 
-    if [[ -z "$api_key" ]]; then
-        return 1 # Empty key is invalid
+do_update() {
+    info_msg "$(msg update_start)"
+    if [[ ! -d "$VENV_DIR" ]]; then
+        error_msg "LiteLLM is not installed in $INSTALL_DIR. Please run the installer first."
+        cleanup
+        exit 1
     fi
 
-    info_msg "Validating API Key for $provider_name..."
-    return 0
+    # upgrade/pin
+    source "$VENV_DIR/bin/activate"
+    pip install "litellm[proxy]==${LITELLM_VERSION}" >> "$log_file" 2>&1
+    deactivate
+
+    # restart
+    systemctl restart litellm.service >> "$log_file" 2>&1 || true
+    sleep 5
+    if systemctl is-active --quiet litellm.service; then
+        # Optional: verify proxy responds
+        health_check
+    else
+        error_exit "$(msg systemd_error)"
+    fi
+
+    info_msg "$(msg update_complete)"
+    cleanup
+    exit 0
 }
 
-# --- Main Installation Logic ---
+do_uninstall() {
+    local confirm_uninstall=""
+    ask "$(msg uninstall_confirm)" confirm_uninstall ""
+    if [[ "$confirm_uninstall" =~ ^[Yy]$ ]]; then
+        systemctl stop litellm.service >> "$log_file" 2>&1 || true
+        systemctl disable litellm.service >> "$log_file" 2>&1 || true
+        rm -f "$SYSTEMD_SERVICE_FILE" || true
+        systemctl daemon-reload >> "$log_file" 2>&1 || true
 
-# Check for --update or --uninstall flags
-for arg in "$@"; do
-    case $arg in
-        --update)
-            info_msg "$(msg update_start)"
-            if [[ -d "$VENV_DIR" ]]; then
-                source "$VENV_DIR/bin/activate"
-                pip install --upgrade "litellm[proxy]"
-                deactivate
-                if [[ -f "$CONFIG_FILE" && -f "$ENV_FILE" ]]; then
-                    source "$ENV_FILE"
-                    if [[ -z "$LITELLM_MASTER_KEY" ]]; then
-                        LITELLM_MASTER_KEY=$(awk -F\" '/master_key:/{print $2; exit}' "$CONFIG_FILE")
-                    fi
-                    if [[ -z "$LITELLM_MASTER_KEY" ]]; then
-                        error_msg "Missing LITELLM_MASTER_KEY. Skipping config regeneration."
-                    else
-                        SELECTED_LLMS=()
-                        mapfile -t model_names < <(awk '/model_name:/{print $2}' "$CONFIG_FILE")
-                        for model_name in "${model_names[@]}"; do
-                            base="${model_name%-lite}"
-                            llm=$(model_name_to_llm "$base")
-                            if [[ -n "$llm" && " ${SELECTED_LLMS[*]} " != *" $llm "* ]]; then
-                                SELECTED_LLMS+=( "$llm" )
-                            fi
-                        done
-                        declare -A LLM_API_KEYS
-                        declare -A LLM_MODELS
-                        LLM_MODELS["GigaChat"]="gigachat/GigaChat"
-                        LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
-                        LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
-                        LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
-                        for llm in "${SELECTED_LLMS[@]}"; do
-                            key_var="${llm^^}_API_KEY"
-                            LLM_API_KEYS["$llm"]="${!key_var}"
-                        done
-                        if [[ ${#SELECTED_LLMS[@]} -gt 0 ]]; then
-                            write_config_and_env
-                        else
-                            error_msg "No models found in config. Skipping config regeneration."
-                        fi
-                    fi
-                else
-                    error_msg "Missing config or env file. Skipping config regeneration."
-                fi
-                sudo systemctl restart litellm.service
-                info_msg "$(msg update_complete)"
-            else
-                error_msg "LiteLLM is not installed in $INSTALL_DIR. Please run the installer first."
-            fi
-            cleanup
-            exit 0
-            ;;
-        --uninstall)
-            read -p "$(msg uninstall_confirm)" confirm_uninstall
-            if [[ "$confirm_uninstall" =~ ^[Yy]$ ]]; then
-                info_msg "$(msg uninstall_complete)"
-                sudo systemctl stop litellm.service || true
-                sudo systemctl disable litellm.service || true
-                sudo rm -f "$SYSTEMD_SERVICE_FILE"
-                sudo systemctl daemon-reload
-                sudo rm -rf "$INSTALL_DIR"
-                info_msg "$(msg uninstall_complete)"
-            else
-                info_msg "$(msg uninstall_aborted)"
-            fi
-            cleanup
-            exit 0
-            ;;
-    esac
-done
+        rm -rf "$INSTALL_DIR" || true
+        rm -f "$ENV_FILE" || true
+        info_msg "$(msg uninstall_complete)"
+    else
+        info_msg "$(msg uninstall_aborted)"
+    fi
+    cleanup
+    exit 0
+}
+
+if [[ "${MODE:-}" == "update" ]]; then
+    do_update
+fi
+if [[ "${MODE:-}" == "uninstall" ]]; then
+    do_uninstall
+fi
+
+# --- Main flow ---
 
 info_msg "$(msg welcome)"
 
@@ -453,248 +481,193 @@ fi
 # 3. Install Dependencies
 info_msg "$(msg dependencies_install)"
 info_msg "Details: $log_file"
-sudo apt update -y >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
-sudo apt install -y python3-venv git curl jq >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
+apt update -y >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
+apt install -y python3-venv git curl jq >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
 info_msg "Dependencies installed."
 
-# 4. Prompt for LiteLLM Port
+# 4. Port
 STEP=0
-STEP_TOTAL=5
+STEP_TOTAL=6
 step_header "$(msg title_port)"
 while true; do
-    port_prompt_msg=$(msg port_prompt)
-    ask "$(msg title_port)" "$port_prompt_msg" input_port "4000"
+    input_port=""
+    ask "$(msg port_prompt)" input_port "4000"
     LITELLM_PORT=${input_port:-4000}
 
     if ! [[ "$LITELLM_PORT" =~ ^[0-9]+$ ]] || (( LITELLM_PORT < 1024 || LITELLM_PORT > 65535 )); then
         error_msg "$(msg port_invalid)"
     elif is_port_in_use "$LITELLM_PORT"; then
-        port_in_use_msg=$(msg port_in_use "$LITELLM_PORT")
-        error_msg "$port_in_use_msg"
+        error_msg "$(msg port_in_use "$LITELLM_PORT")"
     else
         break
     fi
 done
 
-# 5. Prompt for LiteLLM Master Key
-master_key_prompt_msg=$(msg master_key_prompt)
+# 5. Master key (secret input)
 step_header "$(msg title_master_key)"
-ask "$(msg title_master_key)" "$master_key_prompt_msg" LITELLM_MASTER_KEY ""
+ask_secret "$(msg master_key_prompt)" LITELLM_MASTER_KEY ""
 if [[ -z "$LITELLM_MASTER_KEY" ]]; then
     LITELLM_MASTER_KEY=$(generate_random_string)
-    master_key_msg=$(msg master_key_generated "$LITELLM_MASTER_KEY")
-    info_msg "$master_key_msg"
+    info_msg "$(msg master_key_generated)"
 fi
 
-# 6. Select LLM Providers
+# 6. Select LLMs
 LLM_OPTIONS=("GigaChat" "OpenAI" "Anthropic" "DeepSeek")
 SELECTED_LLMS=()
-
-select_llms() {
-    local selection_input
-    local selected_indices=()
-
-    ask "$(msg title_llm_select)" "Enter numbers separated by spaces (e.g. 1 3): " selection_input ""
-
-    for idx in $selection_input; do
-        if [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= ${#LLM_OPTIONS[@]} )); then
-            selected_indices+=( "$((idx - 1))" )
-        fi
-    done
-
-    # Deduplicate while preserving order
-    local seen=" "
-    for idx in "${selected_indices[@]}"; do
-        if [[ "$seen" != *" $idx "* ]]; then
-            SELECTED_LLMS+=( "${LLM_OPTIONS[$idx]}" )
-            seen+="$idx "
-        fi
-    done
-}
 
 step_header "$(msg title_llm_select)"
 echo "$(msg llm_selection_prompt)"
 for i in "${!LLM_OPTIONS[@]}"; do
     echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
 done
-select_llms
 
-if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
-    STEP_TOTAL=6
-fi
+selection_input=""
+ask "" selection_input ""
+selected_indices=()
+for idx in $selection_input; do
+    if [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= ${#LLM_OPTIONS[@]} )); then
+        selected_indices+=( "$((idx - 1))" )
+    fi
+done
+
+# Deduplicate preserving order
+seen=" "
+for idx in "${selected_indices[@]}"; do
+    if [[ "$seen" != *" $idx "* ]]; then
+        SELECTED_LLMS+=( "${LLM_OPTIONS[$idx]}" )
+        seen+="$idx "
+    fi
+done
 
 if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     warn_msg "$(msg llm_none_selected)"
-else
-    # 7. Collect API Keys and Validate
-    declare -A LLM_API_KEYS
-    declare -A LLM_MODELS
-    LLM_MODELS["GigaChat"]="gigachat/GigaChat"
-    LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
-    LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
-    LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
+    info_msg "$(msg script_complete)"
+    cleanup
+    exit 0
+fi
 
-    step_header "API Keys"
-    for llm in "${SELECTED_LLMS[@]}"; do
-        retry_count=0
-        while true; do
-            api_key_prompt_msg=$(msg api_key_prompt "$llm")
-            api_key_title=$(msg title_api_key "$llm")
-            sub_header "$api_key_title (attempt $((retry_count + 1))/$MAX_RETRIES)"
-            ask "$api_key_title" "$api_key_prompt_msg" current_key ""
-            if [[ -z "$current_key" ]]; then
-                api_key_skipped_msg=$(msg api_key_skipped "$llm")
-                warn_msg "$api_key_skipped_msg"
-                break
-            fi
+# 7. Collect API keys (secret)
+declare -A LLM_API_KEYS
+declare -A LLM_MODELS
+for k in "${!DEFAULT_LLM_MODELS[@]}"; do
+    LLM_MODELS["$k"]="${DEFAULT_LLM_MODELS[$k]}"
+done
 
-            if validate_api_key "$llm" "$current_key"; then
-                LLM_API_KEYS["$llm"]="$current_key"
-                break
-            else
-                api_key_invalid_msg=$(msg api_key_invalid "$llm")
-                error_msg "$api_key_invalid_msg"
-                retry_count=$((retry_count + 1))
-                if (( retry_count >= MAX_RETRIES )); then
-                    api_key_retry_msg=$(msg api_key_retry "$llm")
-                    warn_msg "$api_key_retry_msg"
-                    break
-                fi
-            fi
-        done
-    done
+step_header "API Keys"
+for llm in "${SELECTED_LLMS[@]}"; do
+    sub_header "$(msg title_api_key "$llm")"
+    current_key=""
+    ask_secret "$(msg api_key_prompt "$llm")" current_key ""
+    if [[ -z "$current_key" ]]; then
+        warn_msg "$(msg api_key_skipped "$llm")"
+        # Still store empty to keep associative lookups safe
+        LLM_API_KEYS["$llm"]=""
+        continue
+    fi
+    LLM_API_KEYS["$llm"]="$current_key"
+done
 
-    # 8. Determine LLM Priority
-    if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
-        selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
-        priority_prompt_msg=$(msg priority_prompt "$selected_list")
-        step_header "$(msg title_priority)"
-        ask "$(msg title_priority)" "$priority_prompt_msg" priority_order_input ""
-        priority_retries=0
-        while true; do
-            IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_order_input"
+# 8. Priority reorder
+if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
+    selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
+    step_header "$(msg title_priority)"
 
-            if [[ ${#PRIORITY_ORDER[@]} -ne ${#SELECTED_LLMS[@]} ]]; then
-                error_msg "$(msg priority_invalid)"
-                priority_retries=$((priority_retries + 1))
-                if (( priority_retries >= MAX_RETRIES )); then
-                    error_exit "$(msg priority_retry)"
-                fi
-                ask "$(msg title_priority)" "$priority_prompt_msg" priority_order_input ""
-                continue
-            fi
+    priority_retries=0
+    while true; do
+        priority_order_input=""
+        ask "$(msg priority_prompt "$selected_list")" priority_order_input ""
+        IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_order_input"
 
+        if [[ ${#PRIORITY_ORDER[@]} -ne ${#SELECTED_LLMS[@]} ]]; then
+            error_msg "$(msg priority_invalid)"
+        else
             declare -A seen_order=()
             valid_order=1
             for order in "${PRIORITY_ORDER[@]}"; do
                 if ! [[ "$order" =~ ^[0-9]+$ ]] || (( order < 1 || order > ${#SELECTED_LLMS[@]} )); then
-                    valid_order=0
-                    break
+                    valid_order=0; break
                 fi
-                if [[ -n "${seen_order[$order]}" ]]; then
-                    valid_order=0
-                    break
+                if [[ -n "${seen_order[$order]:-}" ]]; then
+                    valid_order=0; break
                 fi
                 seen_order[$order]=1
             done
 
-            if [[ "$valid_order" -ne 1 ]]; then
-                error_msg "$(msg priority_invalid)"
-                priority_retries=$((priority_retries + 1))
-                if (( priority_retries >= MAX_RETRIES )); then
-                    error_exit "$(msg priority_retry)"
-                fi
-                ask "$(msg title_priority)" "$priority_prompt_msg" priority_order_input ""
-                continue
+            if [[ "$valid_order" -eq 1 ]]; then
+                reordered_llms=()
+                for order in "${PRIORITY_ORDER[@]}"; do
+                    reordered_llms+=( "${SELECTED_LLMS[$((order - 1))]}" )
+                done
+                SELECTED_LLMS=( "${reordered_llms[@]}" )
+                break
             fi
 
-            # Reorder SELECTED_LLMS based on priority
-            reordered_llms=()
-            for order in "${PRIORITY_ORDER[@]}"; do
-                reordered_llms+=( "${SELECTED_LLMS[$((order - 1))]}" )
-            done
-            SELECTED_LLMS=( "${reordered_llms[@]}" )
-            break
-        done
-    fi
-
-    # 9. Install LiteLLM
-    info_msg "$(msg litellm_install)"
-    mkdir -p "$INSTALL_DIR"
-    python3 -m venv "$VENV_DIR"
-    source "$VENV_DIR/bin/activate"
-    pip install --upgrade "litellm[proxy]" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
-    deactivate
-
-    # 10. Generate LiteLLM Config + Env
-    write_config_and_env
-    cat > "$SYSTEMD_SERVICE_FILE" << EOF
-[Unit]
-Description=LiteLLM Proxy Service
-After=network.target
-
-[Service]
-User=root
-Group=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$VENV_DIR/bin/litellm --config $CONFIG_FILE --port $LITELLM_PORT
-Restart=always
-EnvironmentFile=$ENV_FILE
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo systemctl daemon-reload >> "$log_file" 2>&1
-    sudo systemctl enable litellm.service >> "$log_file" 2>&1
-
-    # 12. Start and Check Service
-    info_msg "$(msg systemd_start)"
-    sudo systemctl start litellm.service >> "$log_file" 2>&1
-    sleep 5 # Give it a moment to start
-    info_msg "$(msg systemd_status)"
-    if ! sudo systemctl is-active --quiet litellm.service; then
-        error_exit "$(msg systemd_error)"
-    fi
-
-    litellm_ready_msg=$(msg litellm_ready "$LITELLM_PORT")
-    info_msg "$litellm_ready_msg"
-
-    # 13. OpenClaw Integration Info
-    info_msg "$(msg openclaw_config_info)"
-    api_base_msg=$(msg api_base "$LITELLM_PORT")
-    info_msg "$api_base_msg"
-    master_key_display_msg=$(msg master_key "$LITELLM_MASTER_KEY")
-    info_msg "$master_key_display_msg"
-    info_msg "$(msg openclaw_model)"
-    echo "----------------------------------------"
-    echo "LiteLLM install summary:"
-    echo "  URL: http://localhost:${LITELLM_PORT}"
-    echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
-    echo "  Master Key: ${LITELLM_MASTER_KEY}"
-    echo "  Model: openclaw-brain"
-    if [[ "$openai_selected" -eq 0 ]]; then
-        echo "  Note: OPENAI_API_KEY set to dummy for /openai/v1 compatibility"
-    fi
-    echo "----------------------------------------"
-
-    # 14. Optional OpenClaw Installation
-    openclaw_prompt_msg=$(msg openclaw_install_prompt)
-    step_header "$(msg title_openclaw)"
-    ask "$(msg title_openclaw)" "$openclaw_prompt_msg" install_oc ""
-
-    if [[ "$install_oc" =~ ^[Yy]$ ]]; then
-        info_msg "$(msg openclaw_install_start)"
-        temp_oc_script=$(mktemp)
-        if curl -fsSL "$OPENCLAW_INSTALL_SCRIPT" -o "$temp_oc_script" >> "$log_file" 2>&1; then
-            bash "$temp_oc_script"
-        else
-            error_msg "Failed to download OpenClaw installer. Check $OPENCLAW_INSTALL_SCRIPT"
+            error_msg "$(msg priority_invalid)"
         fi
-        rm -f "$temp_oc_script"
+
+        priority_retries=$((priority_retries + 1))
+        if (( priority_retries >= MAX_RETRIES )); then
+            error_exit "$(msg priority_retry)"
+        fi
+    done
+fi
+
+# 9. Install LiteLLM
+info_msg "$(msg litellm_install)"
+mkdir -p "$INSTALL_DIR"
+info_msg "$(msg venv_create)"
+python3 -m venv "$VENV_DIR"
+source "$VENV_DIR/bin/activate"
+pip install "litellm[proxy]==${LITELLM_VERSION}" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
+deactivate
+
+# 10. Create runtime user + config/env
+create_system_user
+write_config_and_env
+write_systemd_service
+
+# 11. Start & check
+info_msg "$(msg systemd_start)"
+systemctl start litellm.service >> "$log_file" 2>&1
+sleep 5
+
+info_msg "$(msg systemd_status)"
+if ! systemctl is-active --quiet litellm.service; then
+    error_exit "$(msg systemd_error)"
+fi
+
+health_check
+info_msg "$(msg litellm_ready "$LITELLM_PORT")"
+
+# 12. OpenClaw integration info (don’t leak master key)
+info_msg "$(msg openclaw_config_info)"
+info_msg "$(msg api_base "$LITELLM_PORT")"
+info_msg "$(msg master_key "$LITELLM_MASTER_KEY")"
+info_msg "$(msg openclaw_model)"
+
+echo "----------------------------------------"
+echo "LiteLLM install summary:"
+echo "  URL: http://localhost:${LITELLM_PORT}"
+echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
+echo "  Master Key: (hidden)"
+echo "  Model: openclaw-brain"
+echo "----------------------------------------"
+
+# 13. Optional OpenClaw install
+step_header "$(msg title_openclaw)"
+install_oc=""
+ask "$(msg openclaw_install_prompt)" install_oc ""
+if [[ "$install_oc" =~ ^[Yy]$ ]]; then
+    info_msg "$(msg openclaw_install_start)"
+    temp_oc_script=$(mktemp)
+    if curl -fsSL "$OPENCLAW_INSTALL_SCRIPT" -o "$temp_oc_script" >> "$log_file" 2>&1; then
+        bash "$temp_oc_script"
     else
-        info_msg "$(msg openclaw_install_skipped)"
+        error_msg "Failed to download OpenClaw installer. Check $OPENCLAW_INSTALL_SCRIPT"
     fi
+    rm -f "$temp_oc_script"
+else
+    info_msg "$(msg openclaw_install_skipped)"
 fi
 
 info_msg "$(msg script_complete)"
