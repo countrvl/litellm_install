@@ -65,6 +65,7 @@ TLS note: this installer currently uses insecure TLS mode (`--insecure`) for Gig
 
 For GigaChat, the installer uses OAuth and stores runtime token in a file:
 
+- OAuth request includes required `RqUID` header (UUID) for token endpoint
 - runtime env for LiteLLM: `/etc/litellm/litellm.env`
 - OAuth env for refresh unit: `/etc/litellm/gigachat.env` (`GIGACHAT_AUTHORIZATION_KEY`)
 - access token is stored in `/etc/litellm/tokens/gigachat.token`

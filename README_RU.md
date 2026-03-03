@@ -65,6 +65,7 @@ TLS note: в текущей версии установщик используе
 
 Для GigaChat установщик использует OAuth и хранит runtime-токен в файле:
 
+- OAuth запрос включает обязательный заголовок `RqUID` (UUID) для token endpoint
 - runtime env для LiteLLM: `/etc/litellm/litellm.env`
 - OAuth env для refresh unit: `/etc/litellm/gigachat.env` (`GIGACHAT_AUTHORIZATION_KEY`)
 - access token хранится в `/etc/litellm/tokens/gigachat.token`

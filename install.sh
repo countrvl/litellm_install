@@ -342,6 +342,8 @@ request_gigachat_access_token() {
     local now=""
     local ttl=""
     local min_ttl=""
+    local rquid=""
+    rquid="$(cat /proc/sys/kernel/random/uuid)"
 
     sleep $((RANDOM % 16))
     if [[ "${GIGACHAT_OAUTH_INSECURE}" -eq 1 ]]; then
@@ -353,6 +355,7 @@ request_gigachat_access_token() {
         $( [[ "${GIGACHAT_OAUTH_INSECURE}" -eq 1 ]] && echo "--insecure" ) \
         --request POST "$GIGACHAT_OAUTH_URL" \
         --header "Authorization: Basic ${auth_key}" \
+        --header "RqUID: ${rquid}" \
         --header "Content-Type: application/x-www-form-urlencoded" \
         --data "scope=${GIGACHAT_OAUTH_SCOPE}")" || return 1
 
@@ -599,6 +602,7 @@ RESP="\$(curl --silent --show-error --fail --connect-timeout 5 --max-time 15 \\
   \$( [[ "\$INSECURE" -eq 1 ]] && echo "--insecure" ) \\
   --request POST "\$OAUTH_URL" \\
   --header "Authorization: Basic \${AUTH_KEY}" \\
+  --header "RqUID: \$(cat /proc/sys/kernel/random/uuid)" \\
   --header "Content-Type: application/x-www-form-urlencoded" \\
   --data "scope=\$SCOPE")"
 TOKEN="\$(printf '%s' "\$RESP" | jq -r '.access_token // empty')"
