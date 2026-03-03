@@ -407,9 +407,6 @@ select_llms() {
     local selection_input
     local selected_indices=()
 
-    for i in "${!LLM_OPTIONS[@]}"; do
-        echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
-    done
     ask "$(msg title_llm_select)" "Enter numbers separated by spaces (e.g. 1 3): " selection_input ""
 
     for idx in $selection_input; do
@@ -635,7 +632,13 @@ EOF
 
     if [[ "$install_oc" =~ ^[Yy]$ ]]; then
         info_msg "$(msg openclaw_install_start)"
-        exec curl -sSL ${OPENCLAW_INSTALL_SCRIPT} | sudo bash
+        temp_oc_script=$(mktemp)
+        if curl -fsSL "$OPENCLAW_INSTALL_SCRIPT" -o "$temp_oc_script" >> "$log_file" 2>&1; then
+            bash "$temp_oc_script"
+        else
+            error_msg "Failed to download OpenClaw installer. Check $OPENCLAW_INSTALL_SCRIPT"
+        fi
+        rm -f "$temp_oc_script"
     else
         info_msg "$(msg openclaw_install_skipped)"
     fi
