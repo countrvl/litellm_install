@@ -138,11 +138,17 @@ RU_MESSAGES["lang_flag_invalid"]="Неверный код языка. Испол
 msg() {
     local key="$1"
     shift
+    local template=""
     if [[ "$LANG_CODE" == "ru" ]]; then
-        printf "${RU_MESSAGES[\"$key\"]}" "$@"
-    else
-        printf "${EN_MESSAGES[\"$key\"]}" "$@"
+        template="${RU_MESSAGES[$key]}"
     fi
+    if [[ -z "$template" ]]; then
+        template="${EN_MESSAGES[$key]}"
+    fi
+    if [[ -z "$template" ]]; then
+        template="$key"
+    fi
+    printf "$template" "$@"
 }
 
 # --- Logging and Messaging Functions ---
@@ -175,6 +181,16 @@ error_msg() {
 
 info_msg "Log file: $log_file"
 
+STEP=0
+STEP_TOTAL=6
+step_header() {
+    local title="$1"
+    STEP=$((STEP + 1))
+    printf "\n==============================\n" > /dev/tty
+    printf "[%d/%d] %s\n" "$STEP" "$STEP_TOTAL" "$title" > /dev/tty
+    printf "==============================\n" > /dev/tty
+}
+
 error_exit() {
     local message="${1:-$(msg error_occurred)}"
     error_msg "$message"
@@ -195,9 +211,20 @@ ask() {
     local __var="$3"
     local default_value="$4"
     local input=""
+    local required_msg=""
 
-    printf "\n=== %s ===\n" "$title" > /dev/tty
-    printf "%s\n" "$(msg input_required)" > /dev/tty
+    if [[ -z "$title" ]]; then
+        title="Question"
+    fi
+    if [[ -z "$prompt" ]]; then
+        prompt="Enter value"
+    fi
+    required_msg=$(msg input_required)
+    if [[ -z "$required_msg" || "$required_msg" == "input_required" ]]; then
+        required_msg="INPUT REQUIRED"
+    fi
+
+    printf "%s\n" "$required_msg" > /dev/tty
     if [[ -n "$default_value" ]]; then
         printf "%s [%s]: " "$prompt" "$default_value" > /dev/tty
     else
@@ -392,6 +419,7 @@ fi
 
 # 3. Install Dependencies
 info_msg "$(msg dependencies_install)"
+info_msg "Details: $log_file"
 sudo apt update -y >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
 sudo apt install -y python3-venv git curl jq >> "$log_file" 2>&1 || error_exit "$(msg dependencies_error)"
 info_msg "Dependencies installed."
@@ -399,6 +427,7 @@ info_msg "Dependencies installed."
 # 4. Prompt for LiteLLM Port
 while true; do
     port_prompt_msg=$(msg port_prompt)
+    step_header "$(msg title_port)"
     ask "$(msg title_port)" "$port_prompt_msg" input_port "4000"
     LITELLM_PORT=${input_port:-4000}
 
@@ -414,6 +443,7 @@ done
 
 # 5. Prompt for LiteLLM Master Key
 master_key_prompt_msg=$(msg master_key_prompt)
+step_header "$(msg title_master_key)"
 ask "$(msg title_master_key)" "$master_key_prompt_msg" LITELLM_MASTER_KEY ""
 if [[ -z "$LITELLM_MASTER_KEY" ]]; then
     LITELLM_MASTER_KEY=$(generate_random_string)
@@ -434,6 +464,7 @@ select_llms() {
     for i in "${!LLM_OPTIONS[@]}"; do
         echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
     done
+    step_header "$(msg title_llm_select)"
     ask "$(msg title_llm_select)" "Enter numbers separated by spaces (e.g. 1 3): " selection_input ""
 
     for idx in $selection_input; do
@@ -478,6 +509,7 @@ else
         while true; do
             api_key_prompt_msg=$(msg api_key_prompt "$llm")
             api_key_title=$(msg title_api_key "$llm")
+            step_header "$api_key_title"
             ask "$api_key_title" "$api_key_prompt_msg" current_key ""
             if [[ -z "$current_key" ]]; then
                 api_key_skipped_msg=$(msg api_key_skipped "$llm")
@@ -505,6 +537,7 @@ else
     if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
         selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
         priority_prompt_msg=$(msg priority_prompt "$selected_list")
+        step_header "$(msg title_priority)"
         ask "$(msg title_priority)" "$priority_prompt_msg" priority_order_input ""
         priority_retries=0
         while true; do
@@ -650,6 +683,7 @@ EOF
 
     # 14. Optional OpenClaw Installation
     openclaw_prompt_msg=$(msg openclaw_install_prompt)
+    step_header "$(msg title_openclaw)"
     ask "$(msg title_openclaw)" "$openclaw_prompt_msg" install_oc ""
 
     if [[ "$install_oc" =~ ^[Yy]$ ]]; then
