@@ -37,7 +37,6 @@ EN_MESSAGES["llm_none_selected"]="No LLM providers selected. LiteLLM will not be
 EN_MESSAGES["api_key_prompt"]="Enter API Key for %s (press Enter to skip): "
 EN_MESSAGES["api_key_invalid"]="Invalid API Key for %s. Please check it and try again, or press Enter to skip."
 EN_MESSAGES["api_key_skipped"]="API Key for %s skipped."
-EN_MESSAGES["api_key_network_error"]="API Key validation failed due to a network error. Please try again."
 EN_MESSAGES["api_key_retry"]="Too many invalid attempts for %s. Skipping."
 EN_MESSAGES["priority_prompt"]="Enter the priority order for selected LLMs (e.g., 1 2 3 for %s): "
 EN_MESSAGES["priority_invalid"]="Invalid priority order. Please enter unique numbers for each selected LLM."
@@ -95,7 +94,6 @@ RU_MESSAGES["llm_none_selected"]="Провайдеры LLM не выбраны. 
 RU_MESSAGES["api_key_prompt"]="Введите API Key для %s (Enter чтобы пропустить): "
 RU_MESSAGES["api_key_invalid"]="Неверный API Key для %s. Проверьте его и попробуйте снова, или нажмите Enter, чтобы пропустить."
 RU_MESSAGES["api_key_skipped"]="API Key для %s пропущен."
-RU_MESSAGES["api_key_network_error"]="Проверка API Key не удалась из-за сетевой ошибки. Попробуйте снова."
 RU_MESSAGES["api_key_retry"]="Слишком много неверных попыток для %s. Пропускаю."
 RU_MESSAGES["priority_prompt"]="Введите порядок приоритета для выбранных LLM (например, 1 2 3 для %s): "
 RU_MESSAGES["priority_invalid"]="Неверный порядок приоритета. Введите уникальные номера для каждой выбранной LLM."
@@ -187,7 +185,7 @@ step_header() {
     local title="$1"
     STEP=$((STEP + 1))
     printf "\n==============================\n" > /dev/tty
-    printf "[%d/%d] %s\n" "$STEP" "$STEP_TOTAL" "$title" > /dev/tty
+    printf "\e[1;32m[%d/%d] %s\e[0m\n" "$STEP" "$STEP_TOTAL" "$title" > /dev/tty
     printf "==============================\n" > /dev/tty
 }
 
@@ -224,12 +222,6 @@ ask() {
     if [[ -z "$prompt" ]]; then
         prompt="Enter value"
     fi
-    required_msg=$(msg input_required)
-    if [[ -z "$required_msg" || "$required_msg" == "input_required" ]]; then
-        required_msg="INPUT REQUIRED"
-    fi
-
-    printf "%s\n" "$required_msg" > /dev/tty
     if [[ -n "$default_value" ]]; then
         printf "%s [%s]: " "$prompt" "$default_value" > /dev/tty
     else
@@ -281,18 +273,69 @@ CONFIG_DIR="$INSTALL_DIR/config"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/litellm.service"
 ENV_FILE="/etc/litellm/litellm.env"
-OPENCLAW_INSTALL_SCRIPT="https://raw.githubusercontent.com/openclaw/openclaw/main/install.sh"
+OPENCLAW_INSTALL_SCRIPT="https://openclaw.ai/install.sh"
 
 # Default values
 LITELLM_PORT=4000
 LITELLM_MASTER_KEY=""
 MAX_RETRIES=3
 
-# API Endpoints for validation
-OPENAI_VALIDATION_URL="https://api.openai.com/v1/models"
-ANTHROPIC_VALIDATION_URL="https://api.anthropic.com/v1/models"
-DEEPSEEK_VALIDATION_URL="https://api.deepseek.com/v1/models"
-GIGACHAT_VALIDATION_URL="https://gigachat.sber.ru/api/v1/models"
+model_name_to_llm() {
+    case "$1" in
+        gigachat) echo "GigaChat" ;;
+        openai) echo "OpenAI" ;;
+        anthropic) echo "Anthropic" ;;
+        deepseek) echo "DeepSeek" ;;
+        *) echo "" ;;
+    esac
+}
+
+write_config_and_env() {
+    info_msg "$(msg config_generate)"
+    mkdir -p "$CONFIG_DIR"
+    cat > "$CONFIG_FILE" << EOF
+model_list:
+$(for llm in "${SELECTED_LLMS[@]}"; do
+    echo "  - model_name: $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    echo "    litellm_params:"
+    echo "      model: ${LLM_MODELS[$llm]}"
+    if [[ "$llm" == "GigaChat" ]]; then
+        echo "      ssl_verify: False"
+    fi
+    echo "      api_key: \"os.environ/${llm^^}_API_KEY\""
+done)
+
+litellm_settings:
+  master_key: "$LITELLM_MASTER_KEY"
+
+router_settings:
+  model_group_alias:
+    openclaw-brain:
+      - $(for llm in "${SELECTED_LLMS[@]}"; do echo -n "\"$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite\" "; done | sed 's/ $//')
+EOF
+
+    info_msg "$(msg systemd_setup)"
+    sudo mkdir -p "$(dirname "$ENV_FILE")"
+    sudo chown root:root "$(dirname "$ENV_FILE")"
+    umask 077
+    openai_selected=0
+    for llm in "${SELECTED_LLMS[@]}"; do
+        if [[ "$llm" == "OpenAI" ]]; then
+            openai_selected=1
+            break
+        fi
+    done
+    cat > "$ENV_FILE" << EOF
+LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
+$(if [[ "$openai_selected" -eq 0 ]]; then echo "OPENAI_API_KEY=dummy"; fi)
+$(for llm in "${SELECTED_LLMS[@]}"; do
+    echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
+done)
+EOF
+    umask 022
+    sudo chown root:root "$ENV_FILE"
+    sudo chmod 600 "$ENV_FILE"
+}
 
 # --- Helper Functions ---
 
@@ -306,68 +349,17 @@ generate_random_string() {
     head /dev/urandom | tr -dc A-Za-z0-9_ | head -c 32
 }
 
-# Function to make an API request for key validation
-make_api_request() {
-    local provider="$1"
-    local api_key="$2"
-    local url="$3"
-    local headers=""
-    local data=""
-
-    case "$provider" in
-        "openai")
-            headers="Authorization: Bearer $api_key"
-            ;;
-        "anthropic")
-            headers="x-api-key: $api_key"
-            ;;
-        "deepseek")
-            headers="Authorization: Bearer $api_key"
-            ;;
-        "gigachat")
-            # GigaChat validation is more complex, usually involves getting a token first
-            # For simplicity, we'll just check if the endpoint is reachable
-            # A more robust check would involve token exchange
-            ;;
-    esac
-
-    if [[ -n "$headers" ]]; then
-        curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 -H "$headers" "$url"
-    else
-        curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "$url"
-    fi
-}
-
 # Function to validate API Key
 validate_api_key() {
     local provider_name="$1"
     local api_key="$2"
-    local validation_url="$3"
-    local http_code
-    local provider_id
 
     if [[ -z "$api_key" ]]; then
         return 1 # Empty key is invalid
     fi
 
-    provider_id=$(echo "$provider_name" | tr '[:upper:]' '[:lower:]')
     info_msg "Validating API Key for $provider_name..."
-    http_code=$(make_api_request "$provider_id" "$api_key" "$validation_url")
-
-    if [[ -z "$http_code" || "$http_code" == "000" ]]; then
-        error_msg "$(msg api_key_network_error)"
-        return 1
-    fi
-
-    if [[ "$http_code" == "200" || "$http_code" == "401" || "$http_code" == "403" ]]; then
-        # 200 OK, 401 Unauthorized (key is valid but lacks permissions), 403 Forbidden (similar to 401)
-        # For GigaChat, a 200 from /models endpoint is a good sign.
-        # For others, 401/403 often means the key format is correct but permissions are off, which is still a valid key format.
-        return 0
-    else
-        error_msg "$(msg api_key_invalid "$provider_name")"
-        return 1
-    fi
+    return 0
 }
 
 # --- Main Installation Logic ---
@@ -381,6 +373,42 @@ for arg in "$@"; do
                 source "$VENV_DIR/bin/activate"
                 pip install --upgrade "litellm[proxy]"
                 deactivate
+                if [[ -f "$CONFIG_FILE" && -f "$ENV_FILE" ]]; then
+                    source "$ENV_FILE"
+                    if [[ -z "$LITELLM_MASTER_KEY" ]]; then
+                        LITELLM_MASTER_KEY=$(awk -F\" '/master_key:/{print $2; exit}' "$CONFIG_FILE")
+                    fi
+                    if [[ -z "$LITELLM_MASTER_KEY" ]]; then
+                        error_msg "Missing LITELLM_MASTER_KEY. Skipping config regeneration."
+                    else
+                        SELECTED_LLMS=()
+                        mapfile -t model_names < <(awk '/model_name:/{print $2}' "$CONFIG_FILE")
+                        for model_name in "${model_names[@]}"; do
+                            base="${model_name%-lite}"
+                            llm=$(model_name_to_llm "$base")
+                            if [[ -n "$llm" && " ${SELECTED_LLMS[*]} " != *" $llm "* ]]; then
+                                SELECTED_LLMS+=( "$llm" )
+                            fi
+                        done
+                        declare -A LLM_API_KEYS
+                        declare -A LLM_MODELS
+                        LLM_MODELS["GigaChat"]="gigachat/GigaChat"
+                        LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
+                        LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
+                        LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
+                        for llm in "${SELECTED_LLMS[@]}"; do
+                            key_var="${llm^^}_API_KEY"
+                            LLM_API_KEYS["$llm"]="${!key_var}"
+                        done
+                        if [[ ${#SELECTED_LLMS[@]} -gt 0 ]]; then
+                            write_config_and_env
+                        else
+                            error_msg "No models found in config. Skipping config regeneration."
+                        fi
+                    fi
+                else
+                    error_msg "Missing config or env file. Skipping config regeneration."
+                fi
                 sudo systemctl restart litellm.service
                 info_msg "$(msg update_complete)"
             else
@@ -466,9 +494,6 @@ select_llms() {
     local selection_input
     local selected_indices=()
 
-    for i in "${!LLM_OPTIONS[@]}"; do
-        echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
-    done
     ask "$(msg title_llm_select)" "Enter numbers separated by spaces (e.g. 1 3): " selection_input ""
 
     for idx in $selection_input; do
@@ -511,14 +536,6 @@ else
 
     step_header "API Keys"
     for llm in "${SELECTED_LLMS[@]}"; do
-        validation_url=""
-        case "$llm" in
-            "GigaChat") validation_url="$GIGACHAT_VALIDATION_URL" ;;
-            "OpenAI") validation_url="$OPENAI_VALIDATION_URL" ;;
-            "Anthropic") validation_url="$ANTHROPIC_VALIDATION_URL" ;;
-            "DeepSeek") validation_url="$DEEPSEEK_VALIDATION_URL" ;;
-        esac
-
         retry_count=0
         while true; do
             api_key_prompt_msg=$(msg api_key_prompt "$llm")
@@ -531,7 +548,7 @@ else
                 break
             fi
 
-            if validate_api_key "$llm" "$current_key" "$validation_url"; then
+            if validate_api_key "$llm" "$current_key"; then
                 LLM_API_KEYS["$llm"]="$current_key"
                 break
             else
@@ -609,45 +626,8 @@ else
     pip install --upgrade "litellm[proxy]" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
     deactivate
 
-    # 10. Generate LiteLLM Config
-    info_msg "$(msg config_generate)"
-    mkdir -p "$CONFIG_DIR"
-    cat > "$CONFIG_FILE" << EOF
-model_list:
-$(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "  - model_name: $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
-    echo "    litellm_params:"
-    echo "      model: ${LLM_MODELS[$llm]}"
-    if [[ "$llm" == "GigaChat" ]]; then
-        echo "      ssl_verify: False"
-    fi
-    echo "      api_key: \"os.environ/${llm^^}_API_KEY\""
-done)
-
-litellm_settings:
-  master_key: "$LITELLM_MASTER_KEY"
-
-router_settings:
-  routing_strategy: "priority"
-  model_group_alias:
-    - model_group: "openclaw-brain"
-      models: [$(for llm in "${SELECTED_LLMS[@]}"; do echo -n "\"$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite\" "; done | sed 's/ $//')]
-EOF
-
-    # 11. Setup Systemd Service
-    info_msg "$(msg systemd_setup)"
-    sudo mkdir -p "$(dirname "$ENV_FILE")"
-    sudo chown root:root "$(dirname "$ENV_FILE")"
-    umask 077
-    cat > "$ENV_FILE" << EOF
-LITELLM_MASTER_KEY=$LITELLM_MASTER_KEY
-$(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "${llm^^}_API_KEY=${LLM_API_KEYS[$llm]}"
-done)
-EOF
-    umask 022
-    sudo chown root:root "$ENV_FILE"
-    sudo chmod 600 "$ENV_FILE"
+    # 10. Generate LiteLLM Config + Env
+    write_config_and_env
     cat > "$SYSTEMD_SERVICE_FILE" << EOF
 [Unit]
 Description=LiteLLM Proxy Service
@@ -693,6 +673,9 @@ EOF
     echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
     echo "  Master Key: ${LITELLM_MASTER_KEY}"
     echo "  Model: openclaw-brain"
+    if [[ "$openai_selected" -eq 0 ]]; then
+        echo "  Note: OPENAI_API_KEY set to dummy for /openai/v1 compatibility"
+    fi
     echo "----------------------------------------"
 
     # 14. Optional OpenClaw Installation
@@ -702,7 +685,13 @@ EOF
 
     if [[ "$install_oc" =~ ^[Yy]$ ]]; then
         info_msg "$(msg openclaw_install_start)"
-        exec curl -sSL ${OPENCLAW_INSTALL_SCRIPT} | sudo bash
+        temp_oc_script=$(mktemp)
+        if curl -fsSL "$OPENCLAW_INSTALL_SCRIPT" -o "$temp_oc_script" >> "$log_file" 2>&1; then
+            bash "$temp_oc_script"
+        else
+            error_msg "Failed to download OpenClaw installer. Check $OPENCLAW_INSTALL_SCRIPT"
+        fi
+        rm -f "$temp_oc_script"
     else
         info_msg "$(msg openclaw_install_skipped)"
     fi
