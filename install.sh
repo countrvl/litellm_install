@@ -558,7 +558,7 @@ if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     exit 0
 fi
 
-# 6. Collect API keys (secret)
+# 6. Collect API keys (visible input to confirm paste)
 declare -A LLM_API_KEYS
 declare -A LLM_MODELS
 for k in "${!DEFAULT_LLM_MODELS[@]}"; do
@@ -569,7 +569,7 @@ step_header "API Keys"
 for llm in "${SELECTED_LLMS[@]}"; do
     sub_header "$(msg title_api_key "$llm")"
     current_key=""
-    ask_secret "$(msg api_key_prompt "$llm")" current_key ""
+    ask "$(msg api_key_prompt "$llm")" current_key ""
     if [[ -z "$current_key" ]]; then
         warn_msg "$(msg api_key_skipped "$llm")"
         # Still store empty to keep associative lookups safe
