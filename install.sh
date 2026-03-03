@@ -74,7 +74,6 @@ EN_MESSAGES["user_create"]="Creating system user for LiteLLM..."
 EN_MESSAGES["user_exists"]="System user for LiteLLM already exists."
 EN_MESSAGES["venv_create"]="Creating Python venv..."
 EN_MESSAGES["service_user"]="Running systemd service as unprivileged user: litellm"
-EN_MESSAGES["gigachat_plugin_install"]="GigaChat selected. Installing litellm-gigachat plugin..."
 
 declare -A RU_MESSAGES
 RU_MESSAGES["welcome"]="Добро пожаловать в установщик LiteLLM и OpenClaw!"
@@ -133,7 +132,6 @@ RU_MESSAGES["user_create"]="Создаю системного пользоват
 RU_MESSAGES["user_exists"]="Системный пользователь для LiteLLM уже существует."
 RU_MESSAGES["venv_create"]="Создаю Python venv..."
 RU_MESSAGES["service_user"]="systemd сервис запускается от непривилегированного пользователя: litellm"
-RU_MESSAGES["gigachat_plugin_install"]="Выбран GigaChat. Устанавливаю плагин litellm-gigachat..."
 
 msg() {
     local key="$1"
@@ -297,7 +295,7 @@ MAX_RETRIES=3
 
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
-DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2"
+DEFAULT_LLM_MODELS["GigaChat"]="gigachat"
 DEFAULT_LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
 DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
 DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
@@ -345,7 +343,7 @@ $(for llm in "${SELECTED_LLMS[@]}"; do
     echo "      api_key: os.environ/${llm^^}_API_KEY"
 done)
 
-general_settings:
+litellm_settings:
   master_key: ${LITELLM_MASTER_KEY}
 
 router_settings:
@@ -426,7 +424,8 @@ do_update() {
 
     # upgrade to latest
     source "$VENV_DIR/bin/activate"
-    pip install --upgrade "litellm[proxy]" >> "$log_file" 2>&1
+    pip install --upgrade pip >> "$log_file" 2>&1
+    pip install --upgrade --no-cache-dir "litellm[proxy]>=1.81.12" >> "$log_file" 2>&1
     deactivate
 
     # restart
@@ -638,11 +637,8 @@ mkdir -p "$INSTALL_DIR"
 info_msg "$(msg venv_create)"
 python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
-pip install "litellm[proxy]" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
-if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]]; then
-    info_msg "$(msg gigachat_plugin_install)"
-    pip install "litellm-gigachat" >> "$log_file" 2>&1 || error_exit "Failed to install litellm-gigachat."
-fi
+pip install --upgrade pip >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
+pip install --upgrade --no-cache-dir "litellm[proxy]>=1.81.12" >> "$log_file" 2>&1 || error_exit "$(msg litellm_install_error)"
 deactivate
 
 # 10. Create runtime user + config/env

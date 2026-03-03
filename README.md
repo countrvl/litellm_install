@@ -64,7 +64,7 @@ To connect OpenClaw to your LiteLLM Proxy, use the following parameters:
 
 ### Update LiteLLM
 
-To update LiteLLM to the latest version:
+To update LiteLLM to version 1.81.12 or newer:
 
 ```bash
 sudo /opt/litellm/install.sh --update
@@ -86,7 +86,7 @@ sudo /opt/litellm/install.sh --uninstall
 
 ## Supported LLMs
 
-*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
+*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat`
 *   **[OpenAI (GPT-5-nano)](https://platform.openai.com/docs/models):** `openai/gpt-5-nano`
 *   **[Anthropic (Haiku 4.5)](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-haiku-4-5`
 *   **[DeepSeek (deepseek-chat)](https://platform.deepseek.com/docs):** `deepseek/deepseek-chat`

@@ -64,7 +64,7 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 
 ### Обновление LiteLLM
 
-Для обновления LiteLLM до последней версии:
+Для обновления LiteLLM до версии 1.81.12 или новее:
 
 ```bash
 sudo /opt/litellm/install.sh --update
@@ -86,7 +86,7 @@ sudo /opt/litellm/install.sh --uninstall
 
 ## Поддерживаемые LLM
 
-*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2`
+*   **[GigaChat (Lite)](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat`
 *   **[OpenAI (GPT-5-nano)](https://platform.openai.com/docs/models):** `openai/gpt-5-nano`
 *   **[Anthropic (Haiku 4.5)](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-haiku-4-5`
 *   **[DeepSeek (deepseek-chat)](https://platform.deepseek.com/docs):** `deepseek/deepseek-chat`
