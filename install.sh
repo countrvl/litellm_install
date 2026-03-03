@@ -160,6 +160,13 @@ cleanup() {
     fi
 }
 
+read_prompt() {
+    local prompt="$1"
+    local __var="$2"
+    printf "%s" "$prompt" > /dev/tty
+    IFS= read -r "$__var" < /dev/tty
+}
+
 # Parse command line arguments for language
 for arg in "$@"; do
     case $arg in
@@ -335,26 +342,31 @@ fi
 info_msg "$(msg dependencies_install)"
 sudo apt update -y || error_exit "$(msg dependencies_error)"
 sudo apt install -y python3-venv git curl jq || error_exit "$(msg dependencies_error)"
+info_msg "Dependencies installed. Waiting for input..."
 
 # 4. Prompt for LiteLLM Port
 while true; do
-    read -p "$(msg port_prompt)" input_port
+    port_prompt_msg=$(msg port_prompt)
+    read_prompt "$port_prompt_msg" input_port
     LITELLM_PORT=${input_port:-4000}
 
     if ! [[ "$LITELLM_PORT" =~ ^[0-9]+$ ]] || (( LITELLM_PORT < 1024 || LITELLM_PORT > 65535 )); then
         error_msg "$(msg port_invalid)"
     elif is_port_in_use "$LITELLM_PORT"; then
-        error_msg "$(msg port_in_use "$LITELLM_PORT")"
+        port_in_use_msg=$(msg port_in_use "$LITELLM_PORT")
+        error_msg "$port_in_use_msg"
     else
         break
     fi
 done
 
 # 5. Prompt for LiteLLM Master Key
-read -p "$(msg master_key_prompt)" LITELLM_MASTER_KEY
+master_key_prompt_msg=$(msg master_key_prompt)
+read_prompt "$master_key_prompt_msg" LITELLM_MASTER_KEY
 if [[ -z "$LITELLM_MASTER_KEY" ]]; then
     LITELLM_MASTER_KEY=$(generate_random_string)
-    info_msg "$(msg master_key_generated "$LITELLM_MASTER_KEY")"
+    master_key_msg=$(msg master_key_generated "$LITELLM_MASTER_KEY")
+    info_msg "$master_key_msg"
 fi
 
 # 6. Select LLM Providers
@@ -370,7 +382,7 @@ select_llms() {
     for i in "${!LLM_OPTIONS[@]}"; do
         echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
     done
-    read -p "Enter numbers separated by spaces (e.g. 1 3): " selection_input
+    read_prompt "Enter numbers separated by spaces (e.g. 1 3): " selection_input
 
     for idx in $selection_input; do
         if [[ "$idx" =~ ^[0-9]+$ ]] && (( idx >= 1 && idx <= ${#LLM_OPTIONS[@]} )); then
@@ -412,9 +424,11 @@ else
 
         retry_count=0
         while true; do
-            read -r -p "$(msg api_key_prompt "$llm")" current_key
+            api_key_prompt_msg=$(msg api_key_prompt "$llm")
+            read_prompt "$api_key_prompt_msg" current_key
             if [[ -z "$current_key" ]]; then
-                warn_msg "$(msg api_key_skipped "$llm")"
+                api_key_skipped_msg=$(msg api_key_skipped "$llm")
+                warn_msg "$api_key_skipped_msg"
                 break
             fi
 
@@ -422,10 +436,12 @@ else
                 LLM_API_KEYS["$llm"]="$current_key"
                 break
             else
-                error_msg "$(msg api_key_invalid "$llm")"
+                api_key_invalid_msg=$(msg api_key_invalid "$llm")
+                error_msg "$api_key_invalid_msg"
                 retry_count=$((retry_count + 1))
                 if (( retry_count >= MAX_RETRIES )); then
-                    warn_msg "$(msg api_key_retry "$llm")"
+                    api_key_retry_msg=$(msg api_key_retry "$llm")
+                    warn_msg "$api_key_retry_msg"
                     break
                 fi
             fi
@@ -435,10 +451,11 @@ else
     # 8. Determine LLM Priority
     if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
         selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
-        info_msg "$(msg priority_prompt "$selected_list")"
+        priority_prompt_msg=$(msg priority_prompt "$selected_list")
+        info_msg "$priority_prompt_msg"
         priority_retries=0
         while true; do
-            read -r -p "" priority_order_input
+            read_prompt "" priority_order_input
             IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_order_input"
 
             if [[ ${#PRIORITY_ORDER[@]} -ne ${#SELECTED_LLMS[@]} ]]; then
@@ -559,16 +576,27 @@ EOF
         error_exit "$(msg systemd_error)"
     fi
 
-    info_msg "$(msg litellm_ready "$LITELLM_PORT")"
+    litellm_ready_msg=$(msg litellm_ready "$LITELLM_PORT")
+    info_msg "$litellm_ready_msg"
 
     # 13. OpenClaw Integration Info
     info_msg "$(msg openclaw_config_info)"
-    info_msg "$(msg api_base "$LITELLM_PORT")"
-    info_msg "$(msg master_key "$LITELLM_MASTER_KEY")"
+    api_base_msg=$(msg api_base "$LITELLM_PORT")
+    info_msg "$api_base_msg"
+    master_key_display_msg=$(msg master_key "$LITELLM_MASTER_KEY")
+    info_msg "$master_key_display_msg"
     info_msg "$(msg openclaw_model)"
+    echo "----------------------------------------"
+    echo "LiteLLM install summary:"
+    echo "  URL: http://localhost:${LITELLM_PORT}"
+    echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
+    echo "  Master Key: ${LITELLM_MASTER_KEY}"
+    echo "  Model: openclaw-brain"
+    echo "----------------------------------------"
 
     # 14. Optional OpenClaw Installation
-    read -p "$(msg openclaw_install_prompt)" install_oc
+    openclaw_prompt_msg=$(msg openclaw_install_prompt)
+    read_prompt "$openclaw_prompt_msg" install_oc
     if [[ "$install_oc" =~ ^[Yy]$ ]]; then
         info_msg "$(msg openclaw_install_start)"
         exec curl -sSL ${OPENCLAW_INSTALL_SCRIPT} | sudo bash
