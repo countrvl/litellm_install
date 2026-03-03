@@ -331,10 +331,15 @@ create_system_user() {
 write_config_and_env() {
     info_msg "$(msg config_generate)"
     mkdir -p "$CONFIG_DIR"
+    local primary_llm="${SELECTED_LLMS[0]}"
 
-    # Config: modern routing style, correct os.environ syntax (no quotes)
+    # Config: include a stable virtual model for OpenClaw and provider aliases.
     cat > "$CONFIG_FILE" << EOF
 model_list:
+  - model_name: openclaw-brain
+    litellm_params:
+      model: ${LLM_MODELS[$primary_llm]}
+      api_key: os.environ/${primary_llm^^}_API_KEY
 $(for llm in "${SELECTED_LLMS[@]}"; do
     alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
     echo "  - model_name: ${alias_name}"
@@ -345,15 +350,22 @@ done)
 
 litellm_settings:
   master_key: ${LITELLM_MASTER_KEY}
+EOF
 
+    # Fallbacks are only needed for multi-provider setups.
+    if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
+        cat >> "$CONFIG_FILE" << EOF
 router_settings:
   routing_strategy: simple-shuffle
   fallbacks:
-    openclaw-brain:
-$(for llm in "${SELECTED_LLMS[@]}"; do
-    echo "      - $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
+    - model: openclaw-brain
+      fallbacks:
+$(for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
+    llm="${SELECTED_LLMS[$i]}"
+    echo "        - $(echo "$llm" | tr '[:upper:]' '[:lower:]')-lite"
 done)
 EOF
+    fi
 
     # Env file (secrets stored in EnvironmentFile; permissions tight)
     mkdir -p "$(dirname "$ENV_FILE")"
