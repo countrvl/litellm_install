@@ -182,13 +182,18 @@ error_msg() {
 info_msg "Log file: $log_file"
 
 STEP=0
-STEP_TOTAL=6
+STEP_TOTAL=0
 step_header() {
     local title="$1"
     STEP=$((STEP + 1))
     printf "\n==============================\n" > /dev/tty
     printf "[%d/%d] %s\n" "$STEP" "$STEP_TOTAL" "$title" > /dev/tty
     printf "==============================\n" > /dev/tty
+}
+
+sub_header() {
+    local title="$1"
+    printf "\n-- %s --\n" "$title" > /dev/tty
 }
 
 error_exit() {
@@ -425,9 +430,11 @@ sudo apt install -y python3-venv git curl jq >> "$log_file" 2>&1 || error_exit "
 info_msg "Dependencies installed."
 
 # 4. Prompt for LiteLLM Port
+STEP=0
+STEP_TOTAL=5
+step_header "$(msg title_port)"
 while true; do
     port_prompt_msg=$(msg port_prompt)
-    step_header "$(msg title_port)"
     ask "$(msg title_port)" "$port_prompt_msg" input_port "4000"
     LITELLM_PORT=${input_port:-4000}
 
@@ -452,7 +459,6 @@ if [[ -z "$LITELLM_MASTER_KEY" ]]; then
 fi
 
 # 6. Select LLM Providers
-info_msg "$(msg llm_selection_prompt)"
 LLM_OPTIONS=("GigaChat" "OpenAI" "Anthropic" "DeepSeek")
 SELECTED_LLMS=()
 
@@ -460,11 +466,9 @@ select_llms() {
     local selection_input
     local selected_indices=()
 
-    echo "$(msg llm_selection_prompt)"
     for i in "${!LLM_OPTIONS[@]}"; do
         echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
     done
-    step_header "$(msg title_llm_select)"
     ask "$(msg title_llm_select)" "Enter numbers separated by spaces (e.g. 1 3): " selection_input ""
 
     for idx in $selection_input; do
@@ -483,7 +487,16 @@ select_llms() {
     done
 }
 
+step_header "$(msg title_llm_select)"
+echo "$(msg llm_selection_prompt)"
+for i in "${!LLM_OPTIONS[@]}"; do
+    echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
+done
 select_llms
+
+if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
+    STEP_TOTAL=6
+fi
 
 if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     warn_msg "$(msg llm_none_selected)"
@@ -496,6 +509,7 @@ else
     LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
     LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
 
+    step_header "API Keys"
     for llm in "${SELECTED_LLMS[@]}"; do
         validation_url=""
         case "$llm" in
@@ -509,7 +523,7 @@ else
         while true; do
             api_key_prompt_msg=$(msg api_key_prompt "$llm")
             api_key_title=$(msg title_api_key "$llm")
-            step_header "$api_key_title"
+            sub_header "$api_key_title (attempt $((retry_count + 1))/$MAX_RETRIES)"
             ask "$api_key_title" "$api_key_prompt_msg" current_key ""
             if [[ -z "$current_key" ]]; then
                 api_key_skipped_msg=$(msg api_key_skipped "$llm")
