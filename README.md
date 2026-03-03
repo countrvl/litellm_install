@@ -2,6 +2,11 @@
 
 Этот скрипт предназначен для автоматической установки и настройки [LiteLLM Proxy](https://litellm.ai/) с поддержкой нескольких Large Language Models (LLM), включая GigaChat, OpenAI, Anthropic и DeepSeek, на операционных системах Debian/Ubuntu. После успешной настройки LiteLLM скрипт предлагает опционально запустить официальный инсталлятор [OpenClaw](https://openclaw.ai/).
 
+### Ресурсы LiteLLM:
+*   **Официальный сайт:** [litellm.ai](https://litellm.ai/)
+*   **Документация:** [docs.litellm.ai](https://docs.litellm.ai/)
+*   **GitHub:** [github.com/BerriAI/litellm](https://github.com/BerriAI/litellm)
+
 LiteLLM будет настроен как системный сервис (`systemd`), что обеспечит его автоматический запуск при старте системы и надежную работу.
 
 ## Возможности
