@@ -557,12 +557,7 @@ EOF
 }
 
 health_check() {
-    # Keep post-install check safe: verify local port reachability only.
-    if ! curl -fsS "http://127.0.0.1:${LITELLM_PORT}/" >/dev/null 2>&1; then
-        warn_msg "$(msg health_failed)"
-        warn_msg "Proxy process is active, but HTTP probe to 127.0.0.1:${LITELLM_PORT} failed."
-        return 0
-    fi
+    # Intentionally disabled as install gate: model-level checks may trigger upstream rate limits.
     return 0
 }
 

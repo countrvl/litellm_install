@@ -71,6 +71,7 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
 Эксплуатационное замечание:
 
 - не делайте агрессивный polling `/health` (особенно с коротким интервалом), так как model-level проверки могут повышать нагрузку на OAuth upstream и вызывать `429 Too Many Requests`.
+- установщик/обновление не используют `/health` как критерий успеха; готовность определяется активным `systemd` сервисом.
 
 Конфиг генерируется детерминированно:
 
@@ -90,10 +91,13 @@ sudo /opt/litellm/install.sh --update
 
 ```bash
 sudo /opt/litellm/venv/bin/pip show litellm | grep -i '^Version'
-sudo systemctl status litellm --no-pager
+sudo systemctl status litellm --no-pager -l
 sudo grep -n "model: gigachat/GigaChat-2\\|api_key: os.environ/GIGACHAT_CREDENTIALS\\|router_settings" /opt/litellm/config/config.yaml
 sudo grep -n '^GIGACHAT_CREDENTIALS=' /etc/litellm/litellm.env
-curl -fsS http://127.0.0.1:4000/ >/dev/null && echo "Proxy HTTP reachable"
+curl -sS http://127.0.0.1:4000/openai/v1/models | jq .
+curl -sS http://127.0.0.1:4000/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openclaw-brain","messages":[{"role":"user","content":"ответь одним словом: ок"}],"max_tokens":8,"temperature":0}' | jq .
 ```
 
 ### Удаление LiteLLM
