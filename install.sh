@@ -163,7 +163,7 @@ cleanup() {
 read_prompt() {
     local prompt="$1"
     local __var="$2"
-    printf "%s" "$prompt" > /dev/tty
+    printf "\n%s" "$prompt" > /dev/tty
     IFS= read -r "$__var" < /dev/tty
 }
 
@@ -347,6 +347,7 @@ info_msg "Dependencies installed. Waiting for input..."
 # 4. Prompt for LiteLLM Port
 while true; do
     port_prompt_msg=$(msg port_prompt)
+    info_msg "Input required: LiteLLM port (press Enter for default)."
     read_prompt "$port_prompt_msg" input_port
     LITELLM_PORT=${input_port:-4000}
 
@@ -362,6 +363,7 @@ done
 
 # 5. Prompt for LiteLLM Master Key
 master_key_prompt_msg=$(msg master_key_prompt)
+info_msg "Input required: LiteLLM master key (press Enter to auto-generate)."
 read_prompt "$master_key_prompt_msg" LITELLM_MASTER_KEY
 if [[ -z "$LITELLM_MASTER_KEY" ]]; then
     LITELLM_MASTER_KEY=$(generate_random_string)
@@ -382,6 +384,7 @@ select_llms() {
     for i in "${!LLM_OPTIONS[@]}"; do
         echo "$((i + 1)). ${LLM_OPTIONS[$i]}"
     done
+    info_msg "Input required: select LLMs by number (e.g., 1 3)."
     read_prompt "Enter numbers separated by spaces (e.g. 1 3): " selection_input
 
     for idx in $selection_input; do
@@ -425,6 +428,7 @@ else
         retry_count=0
         while true; do
             api_key_prompt_msg=$(msg api_key_prompt "$llm")
+            info_msg "Input required: API key for $llm (press Enter to skip)."
             read_prompt "$api_key_prompt_msg" current_key
             if [[ -z "$current_key" ]]; then
                 api_key_skipped_msg=$(msg api_key_skipped "$llm")
@@ -455,6 +459,7 @@ else
         info_msg "$priority_prompt_msg"
         priority_retries=0
         while true; do
+            info_msg "Input required: priority order numbers (e.g., 2 1)."
             read_prompt "" priority_order_input
             IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_order_input"
 
@@ -596,6 +601,7 @@ EOF
 
     # 14. Optional OpenClaw Installation
     openclaw_prompt_msg=$(msg openclaw_install_prompt)
+    info_msg "Input required: install OpenClaw? (y/n)."
     read_prompt "$openclaw_prompt_msg" install_oc
     if [[ "$install_oc" =~ ^[Yy]$ ]]; then
         info_msg "$(msg openclaw_install_start)"
