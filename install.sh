@@ -402,8 +402,8 @@ else
     LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
 
     for llm in "${SELECTED_LLMS[@]}"; do
-        local api_key_var_name="${llm^^}_API_KEY"
-        local validation_url=""
+        api_key_var_name="${llm^^}_API_KEY"
+        validation_url=""
         case "$llm" in
             "GigaChat") validation_url="$GIGACHAT_VALIDATION_URL" ;;
             "OpenAI") validation_url="$OPENAI_VALIDATION_URL" ;;
@@ -413,7 +413,7 @@ else
 
         while true; do
             read -p "$(msg api_key_prompt)" "$llm"
-            local current_key="${!llm}"
+            current_key="${!llm}"
             if validate_api_key "$llm" "$current_key" "$validation_url"; then
                 LLM_API_KEYS["$llm"]="$current_key"
                 break
@@ -537,4 +537,3 @@ fi
 
 info_msg "$(msg script_complete)"
 cleanup
-
