@@ -185,7 +185,7 @@ step_header() {
     local title="$1"
     STEP=$((STEP + 1))
     printf "\n==============================\n" > /dev/tty
-    printf "[%d/%d] %s\n" "$STEP" "$STEP_TOTAL" "$title" > /dev/tty
+    printf "\e[1;32m[%d/%d] %s\e[0m\n" "$STEP" "$STEP_TOTAL" "$title" > /dev/tty
     printf "==============================\n" > /dev/tty
 }
 
@@ -222,12 +222,6 @@ ask() {
     if [[ -z "$prompt" ]]; then
         prompt="Enter value"
     fi
-    required_msg=$(msg input_required)
-    if [[ -z "$required_msg" || "$required_msg" == "input_required" ]]; then
-        required_msg="INPUT REQUIRED"
-    fi
-
-    printf "%s\n" "$required_msg" > /dev/tty
     if [[ -n "$default_value" ]]; then
         printf "%s [%s]: " "$prompt" "$default_value" > /dev/tty
     else
