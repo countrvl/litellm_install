@@ -32,7 +32,7 @@ EN_MESSAGES["llm_selection_prompt"]="Select LLM providers to configure (enter nu
 EN_MESSAGES["llm_none_selected"]="No LLM providers selected. LiteLLM will not be configured."
 EN_MESSAGES["api_key_prompt"]="Enter API Key for %s (press Enter to skip): "
 EN_MESSAGES["api_key_skipped"]="API Key for %s skipped."
-EN_MESSAGES["priority_prompt"]="Enter the priority order for selected LLMs (e.g., 1 2 3 for %s): "
+EN_MESSAGES["priority_prompt"]="Enter the priority order (e.g., 1 2 for %s): "
 EN_MESSAGES["priority_invalid"]="Invalid priority order. Please enter unique numbers for each selected LLM."
 EN_MESSAGES["priority_retry"]="Too many invalid attempts. Exiting."
 EN_MESSAGES["entered_value"]="Entered."
@@ -52,7 +52,8 @@ EN_MESSAGES["systemd_error"]="LiteLLM service failed to start. Check logs with '
 EN_MESSAGES["litellm_ready"]="LiteLLM Proxy is running and accessible at http://localhost:%s."
 EN_MESSAGES["openclaw_config_info"]="To connect OpenClaw to LiteLLM, use these settings:"
 EN_MESSAGES["api_base"]="API Base: http://localhost:%s/openai/v1"
-EN_MESSAGES["openclaw_model"]="Model for OpenClaw: openclaw-brain"
+EN_MESSAGES["openclaw_model"]="Suggested model: gigachat-2"
+EN_MESSAGES["model_hint"]="Suggested model: use one from /openai/v1/models"
 EN_MESSAGES["openclaw_install_prompt"]="Do you want to launch the official OpenClaw installer? (y/n): "
 EN_MESSAGES["openclaw_install_start"]="Transferring control to the OpenClaw installer..."
 EN_MESSAGES["openclaw_install_skipped"]="OpenClaw installation skipped. You can run it manually later."
@@ -89,7 +90,7 @@ RU_MESSAGES["llm_selection_prompt"]="Выберите провайдеров LLM
 RU_MESSAGES["llm_none_selected"]="Провайдеры LLM не выбраны. LiteLLM не будет настроен."
 RU_MESSAGES["api_key_prompt"]="Введите API Key для %s (Enter чтобы пропустить): "
 RU_MESSAGES["api_key_skipped"]="API Key для %s пропущен."
-RU_MESSAGES["priority_prompt"]="Введите порядок приоритета для выбранных LLM (например, 1 2 3 для %s): "
+RU_MESSAGES["priority_prompt"]="Введите порядок приоритета (например, 1 2 для %s): "
 RU_MESSAGES["priority_invalid"]="Неверный порядок приоритета. Введите уникальные номера для каждой выбранной LLM."
 RU_MESSAGES["priority_retry"]="Слишком много неверных попыток. Выход."
 RU_MESSAGES["entered_value"]="Введено."
@@ -109,7 +110,8 @@ RU_MESSAGES["systemd_error"]="Сервис LiteLLM не запустился. П
 RU_MESSAGES["litellm_ready"]="LiteLLM Proxy запущен и доступен по адресу http://localhost:%s."
 RU_MESSAGES["openclaw_config_info"]="Для подключения OpenClaw к LiteLLM используйте:"
 RU_MESSAGES["api_base"]="API Base: http://localhost:%s/openai/v1"
-RU_MESSAGES["openclaw_model"]="Модель для OpenClaw: openclaw-brain"
+RU_MESSAGES["openclaw_model"]="Рекомендуемая модель: gigachat-2"
+RU_MESSAGES["model_hint"]="Рекомендуемая модель: выберите из /openai/v1/models"
 RU_MESSAGES["openclaw_install_prompt"]="Хотите запустить официальный инсталлятор OpenClaw? (y/n): "
 RU_MESSAGES["openclaw_install_start"]="Передаю управление инсталлятору OpenClaw..."
 RU_MESSAGES["openclaw_install_skipped"]="Установка OpenClaw пропущена. Можно запустить позже вручную."
@@ -303,14 +305,12 @@ MAX_RETRIES=3
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
 DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2"
-DEFAULT_LLM_MODELS["OpenAI"]="openai/gpt-5-nano"
-DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-haiku-4-5"
-DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-chat"
+DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-sonnet-4-5-20250929"
+DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-reasoner"
 
 model_name_to_llm() {
     case "$1" in
         gigachat) echo "GigaChat" ;;
-        openai) echo "OpenAI" ;;
         anthropic) echo "Anthropic" ;;
         deepseek) echo "DeepSeek" ;;
         *) echo "" ;;
@@ -389,6 +389,65 @@ cleanup_legacy_gigachat_artifacts() {
     systemctl daemon-reload >> "$log_file" 2>&1 || true
 }
 
+get_env_value() {
+    local key="$1"
+    local file="$2"
+    [[ -f "$file" ]] || return 0
+    sed -n "s/^${key}=//p" "$file" | head -n1
+}
+
+load_port_from_service_or_default() {
+    local port_from_service=""
+    if [[ -f "$SYSTEMD_SERVICE_FILE" ]]; then
+        port_from_service="$(sed -n 's/.*--port \([0-9]\{2,5\}\).*/\1/p' "$SYSTEMD_SERVICE_FILE" | head -n1)"
+    fi
+    if [[ "$port_from_service" =~ ^[0-9]+$ ]]; then
+        LITELLM_PORT="$port_from_service"
+    else
+        LITELLM_PORT=4000
+    fi
+}
+
+load_state_from_env_for_update() {
+    [[ -f "$ENV_FILE" ]] || error_exit "Missing $ENV_FILE. Re-run installer."
+
+    SELECTED_LLMS=()
+    declare -gA LLM_API_KEYS
+    declare -gA LLM_MODELS
+    for k in "${!DEFAULT_LLM_MODELS[@]}"; do
+        LLM_MODELS["$k"]="${DEFAULT_LLM_MODELS[$k]}"
+    done
+
+    local gigachat_creds anthropic_key deepseek_key
+    gigachat_creds="$(get_env_value "GIGACHAT_CREDENTIALS" "$ENV_FILE")"
+    anthropic_key="$(get_env_value "ANTHROPIC_API_KEY" "$ENV_FILE")"
+    deepseek_key="$(get_env_value "DEEPSEEK_API_KEY" "$ENV_FILE")"
+
+    if [[ -n "$gigachat_creds" ]]; then
+        SELECTED_LLMS+=("GigaChat")
+        LLM_API_KEYS["GigaChat"]="$gigachat_creds"
+    fi
+    if [[ -n "$anthropic_key" ]]; then
+        SELECTED_LLMS+=("Anthropic")
+        LLM_API_KEYS["Anthropic"]="$anthropic_key"
+    fi
+    if [[ -n "$deepseek_key" ]]; then
+        SELECTED_LLMS+=("DeepSeek")
+        LLM_API_KEYS["DeepSeek"]="$deepseek_key"
+    fi
+
+    [[ ${#SELECTED_LLMS[@]} -gt 0 ]] || error_exit "No provider credentials found in $ENV_FILE."
+    DEEP_ANTH_PRIORITY="DeepSeek"
+    if [[ -f "$CONFIG_FILE" ]]; then
+        if grep -qE '^[[:space:]]*-[[:space:]]*claude-(sonnet|haiku):' "$CONFIG_FILE"; then
+            DEEP_ANTH_PRIORITY="Anthropic"
+        elif grep -qE '^[[:space:]]*-[[:space:]]*deepseek-(reasoner|chat):' "$CONFIG_FILE"; then
+            DEEP_ANTH_PRIORITY="DeepSeek"
+        fi
+    fi
+    load_port_from_service_or_default
+}
+
 create_system_user() {
     if id -u litellm >/dev/null 2>&1; then
         info_msg "$(msg user_exists)"
@@ -417,97 +476,182 @@ migrate_legacy_gigachat_credentials() {
 write_config_and_env() {
     info_msg "$(msg config_generate)"
     mkdir -p "$CONFIG_DIR"
-    local primary_llm="${SELECTED_LLMS[0]}"
-    local primary_alias
-    if [[ "$primary_llm" == "GigaChat" ]]; then
-        primary_alias="gigachat-main"
-    else
-        primary_alias="$(echo "$primary_llm" | tr '[:upper:]' '[:lower:]')-main"
+
+    local providers_for_config=()
+    for llm in "${SELECTED_LLMS[@]}"; do
+        if [[ -n "${LLM_API_KEYS[$llm]:-}" ]]; then
+            providers_for_config+=( "$llm" )
+        else
+            warn_msg "Skipping $llm: empty credential."
+        fi
+    done
+    [[ ${#providers_for_config[@]} -gt 0 ]] || error_exit "No valid provider credentials were supplied."
+
+    local has_deepseek=0
+    local has_anthropic=0
+    local has_gigachat=0
+    local llm=""
+    for llm in "${providers_for_config[@]}"; do
+        case "$llm" in
+            DeepSeek) has_deepseek=1 ;;
+            Anthropic) has_anthropic=1 ;;
+            GigaChat) has_gigachat=1 ;;
+        esac
+    done
+
+    local deep_first=1
+    if (( has_deepseek == 1 && has_anthropic == 1 )) && [[ "${DEEP_ANTH_PRIORITY:-DeepSeek}" == "Anthropic" ]]; then
+        deep_first=0
     fi
-    # Two deterministic config modes:
-    # 1) only GigaChat -> no router_settings
-    # 2) multi-provider -> aliases + router fallbacks
+
+    local ordered_providers=()
+    if (( has_deepseek == 1 && has_anthropic == 1 )); then
+        if (( deep_first == 1 )); then
+            ordered_providers+=( "DeepSeek" "Anthropic" )
+        else
+            ordered_providers+=( "Anthropic" "DeepSeek" )
+        fi
+    else
+        (( has_deepseek == 1 )) && ordered_providers+=( "DeepSeek" )
+        (( has_anthropic == 1 )) && ordered_providers+=( "Anthropic" )
+    fi
+    (( has_gigachat == 1 )) && ordered_providers+=( "GigaChat" )
+
     cat > "$CONFIG_FILE" << EOF
 model_list:
 EOF
 
-    if [[ ${#SELECTED_LLMS[@]} -eq 1 ]]; then
-        cat >> "$CONFIG_FILE" << EOF
-  - model_name: openclaw-brain
+    for llm in "${ordered_providers[@]}"; do
+        if [[ "$llm" == "DeepSeek" ]]; then
+            cat >> "$CONFIG_FILE" << EOF
+  - model_name: deepseek-reasoner
     litellm_params:
-      model: ${LLM_MODELS[$primary_llm]}
-      api_key: $( [[ "$primary_llm" == "GigaChat" ]] && echo "os.environ/GIGACHAT_CREDENTIALS" || echo "os.environ/${primary_llm^^}_API_KEY" )
-$( [[ "$primary_llm" == "GigaChat" ]] && echo "      ssl_verify: false" )
-$(if [[ "$primary_llm" == "GigaChat" ]]; then
-    cat << EOA
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+      request_timeout: 30
+
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      request_timeout: 30
+EOF
+        elif [[ "$llm" == "Anthropic" ]]; then
+            cat >> "$CONFIG_FILE" << EOF
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/ANTHROPIC_API_KEY
+      request_timeout: 30
+
+  - model_name: claude-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+      request_timeout: 30
+EOF
+        elif [[ "$llm" == "GigaChat" ]]; then
+            cat >> "$CONFIG_FILE" << EOF
   - model_name: gigachat-2
     litellm_params:
-      model: ${LLM_MODELS[$primary_llm]}
+      model: gigachat/GigaChat-2
       api_key: os.environ/GIGACHAT_CREDENTIALS
       ssl_verify: false
-EOA
-fi)
+      request_timeout: 30
 EOF
-    else
-        local fallback_aliases=()
-        local generated_aliases=()
-        fallback_aliases+=( "${primary_alias}" )
-        generated_aliases+=( "${primary_alias}" )
-        for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
-            llm="${SELECTED_LLMS[$i]}"
-            alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-fallback"
-            fallback_aliases+=( "$alias_name" )
-            generated_aliases+=( "$alias_name" )
-        done
-
-        # Validate fallback aliases are deterministic and all aliases exist.
-        if [[ "${#fallback_aliases[@]}" -eq 0 ]]; then
-            error_exit "No fallback aliases generated for router mode."
         fi
-        for alias_name in "${fallback_aliases[@]}"; do
-            if [[ " ${generated_aliases[*]} " != *" ${alias_name} "* ]]; then
-                error_exit "Invalid fallback alias generated: ${alias_name}"
-            fi
-        done
+    done
 
-        cat >> "$CONFIG_FILE" << EOF
-  - model_name: openclaw-brain
-    litellm_params:
-      model: ${LLM_MODELS[$primary_llm]}
-      api_key: $( [[ "$primary_llm" == "GigaChat" ]] && echo "os.environ/GIGACHAT_CREDENTIALS" || echo "os.environ/${primary_llm^^}_API_KEY" )
-$( [[ "$primary_llm" == "GigaChat" ]] && echo "      ssl_verify: false" )
-  - model_name: ${primary_alias}
-    litellm_params:
-      model: ${LLM_MODELS[$primary_llm]}
-      api_key: $( [[ "$primary_llm" == "GigaChat" ]] && echo "os.environ/GIGACHAT_CREDENTIALS" || echo "os.environ/${primary_llm^^}_API_KEY" )
-$( [[ "$primary_llm" == "GigaChat" ]] && echo "      ssl_verify: false" )
-$(for ((i=1; i<${#SELECTED_LLMS[@]}; i++)); do
-    llm="${SELECTED_LLMS[$i]}"
-    alias_name="$(echo "$llm" | tr '[:upper:]' '[:lower:]')-fallback"
-    echo "  - model_name: ${alias_name}"
-    echo "    litellm_params:"
-    echo "      model: ${LLM_MODELS[$llm]}"
-    if [[ "$llm" == "GigaChat" ]]; then
-        echo "      api_key: os.environ/GIGACHAT_CREDENTIALS"
-        echo "      ssl_verify: false"
-    else
-        echo "      api_key: os.environ/${llm^^}_API_KEY"
-    fi
-done)
+    cat >> "$CONFIG_FILE" << EOF
+
+litellm_settings:
+  set_verbose: true
+  request_timeout: 30
+
 router_settings:
-  fallbacks:
-    openclaw-brain:
-$(for alias_name in "${fallback_aliases[@]}"; do
-    echo "      - ${alias_name}"
-done)
+  num_retries: 2
+  timeout: 30
 EOF
+
+    local provider_count=0
+    provider_count=$((has_deepseek + has_anthropic + has_gigachat))
+    if (( provider_count >= 2 )); then
+        cat >> "$CONFIG_FILE" << EOF
+  fallbacks:
+EOF
+        if (( provider_count == 2 )); then
+            if (( has_deepseek == 1 && has_anthropic == 1 )); then
+                if (( deep_first == 1 )); then
+                    cat >> "$CONFIG_FILE" << EOF
+    - deepseek-reasoner:
+        - claude-sonnet
+    - deepseek-chat:
+        - claude-haiku
+EOF
+                else
+                    cat >> "$CONFIG_FILE" << EOF
+    - claude-sonnet:
+        - deepseek-reasoner
+    - claude-haiku:
+        - deepseek-chat
+EOF
+                fi
+            elif (( has_deepseek == 1 && has_gigachat == 1 )); then
+                cat >> "$CONFIG_FILE" << EOF
+    - deepseek-reasoner:
+        - gigachat-2
+    - deepseek-chat:
+        - gigachat-2
+EOF
+            elif (( has_anthropic == 1 && has_gigachat == 1 )); then
+                cat >> "$CONFIG_FILE" << EOF
+    - claude-sonnet:
+        - gigachat-2
+    - claude-haiku:
+        - gigachat-2
+EOF
+            fi
+        elif (( provider_count == 3 )); then
+            if (( deep_first == 1 )); then
+                cat >> "$CONFIG_FILE" << EOF
+    - deepseek-reasoner:
+        - claude-sonnet
+        - gigachat-2
+    - deepseek-chat:
+        - claude-haiku
+        - gigachat-2
+EOF
+            else
+                cat >> "$CONFIG_FILE" << EOF
+    - claude-sonnet:
+        - deepseek-reasoner
+        - gigachat-2
+    - claude-haiku:
+        - deepseek-chat
+        - gigachat-2
+EOF
+            fi
+        fi
     fi
+
+    cat >> "$CONFIG_FILE" << EOF
+
+cache: true
+
+cache_config:
+  type: redis
+  host: localhost
+  port: 6379
+
+cache_policy:
+  default_ttl: 3600
+EOF
 
     # Runtime env for LiteLLM (no OAuth authorization key here)
     mkdir -p "$(dirname "$ENV_FILE")"
     umask 077
     cat > "$ENV_FILE" << EOF
-$(for llm in "${SELECTED_LLMS[@]}"; do
+$(for llm in "${providers_for_config[@]}"; do
     if [[ "$llm" == "GigaChat" ]]; then
         echo "GIGACHAT_CREDENTIALS=${LLM_API_KEYS[$llm]}"
     else
@@ -577,8 +721,10 @@ do_update() {
     pip install --upgrade --no-cache-dir "litellm[proxy]>=1.81.12" >> "$log_file" 2>&1
     deactivate
 
-    # restart
+    # rebuild config/env from current credentials and restart
     migrate_legacy_gigachat_credentials
+    load_state_from_env_for_update
+    write_config_and_env
     cleanup_legacy_gigachat_artifacts
     systemctl restart litellm.service >> "$log_file" 2>&1 || true
     sleep 5
@@ -679,8 +825,9 @@ while true; do
 done
 
 # 5. Select LLMs
-LLM_OPTIONS=("GigaChat" "OpenAI" "Anthropic" "DeepSeek")
+LLM_OPTIONS=("GigaChat" "Anthropic" "DeepSeek")
 SELECTED_LLMS=()
+DEEP_ANTH_PRIORITY="DeepSeek"
 
 step_header "$(msg title_llm_select)"
 echo "$(msg llm_selection_prompt)"
@@ -711,6 +858,31 @@ if [[ ${#SELECTED_LLMS[@]} -eq 0 ]]; then
     info_msg "$(msg script_complete)"
     cleanup
     exit 0
+fi
+
+if [[ " ${SELECTED_LLMS[*]} " == *" DeepSeek "* ]] && [[ " ${SELECTED_LLMS[*]} " == *" Anthropic "* ]]; then
+    step_header "$(msg title_priority)"
+    local_priority_attempts=0
+    while true; do
+        echo "1. DeepSeek"
+        echo "2. Anthropic"
+        priority_input=""
+        ask "$(msg priority_prompt "DeepSeek, Anthropic")" priority_input "1 2"
+        read -r p1 p2 extra <<< "$priority_input"
+        if [[ -z "${extra:-}" ]] && [[ -n "${p1:-}" ]] && [[ -n "${p2:-}" ]] && [[ "$p1" =~ ^[12]$ ]] && [[ "$p2" =~ ^[12]$ ]] && [[ "$p1" != "$p2" ]]; then
+            if [[ "$p1" == "1" ]]; then
+                DEEP_ANTH_PRIORITY="DeepSeek"
+            else
+                DEEP_ANTH_PRIORITY="Anthropic"
+            fi
+            break
+        fi
+        error_msg "$(msg priority_invalid)"
+        local_priority_attempts=$((local_priority_attempts + 1))
+        if (( local_priority_attempts >= MAX_RETRIES )); then
+            error_exit "$(msg priority_retry)"
+        fi
+    done
 fi
 
 # Ensure dedicated runtime account exists before writing config files.
@@ -744,51 +916,6 @@ for llm in "${SELECTED_LLMS[@]}"; do
     LLM_API_KEYS["$llm"]="$current_key"
 done
 
-# 7. Priority reorder
-if [[ ${#SELECTED_LLMS[@]} -gt 1 ]]; then
-    selected_list=$(printf "%s " "${SELECTED_LLMS[@]}" | sed 's/ $//')
-    step_header "$(msg title_priority)"
-
-    priority_retries=0
-    while true; do
-        priority_order_input=""
-        ask "$(msg priority_prompt "$selected_list")" priority_order_input ""
-        IFS=' ' read -r -a PRIORITY_ORDER <<< "$priority_order_input"
-
-        if [[ ${#PRIORITY_ORDER[@]} -ne ${#SELECTED_LLMS[@]} ]]; then
-            error_msg "$(msg priority_invalid)"
-        else
-            declare -A seen_order=()
-            valid_order=1
-            for order in "${PRIORITY_ORDER[@]}"; do
-                if ! [[ "$order" =~ ^[0-9]+$ ]] || (( order < 1 || order > ${#SELECTED_LLMS[@]} )); then
-                    valid_order=0; break
-                fi
-                if [[ -n "${seen_order[$order]:-}" ]]; then
-                    valid_order=0; break
-                fi
-                seen_order[$order]=1
-            done
-
-            if [[ "$valid_order" -eq 1 ]]; then
-                reordered_llms=()
-                for order in "${PRIORITY_ORDER[@]}"; do
-                    reordered_llms+=( "${SELECTED_LLMS[$((order - 1))]}" )
-                done
-                SELECTED_LLMS=( "${reordered_llms[@]}" )
-                break
-            fi
-
-            error_msg "$(msg priority_invalid)"
-        fi
-
-        priority_retries=$((priority_retries + 1))
-        if (( priority_retries >= MAX_RETRIES )); then
-            error_exit "$(msg priority_retry)"
-        fi
-    done
-fi
-
 # 8. Install LiteLLM
 info_msg "$(msg litellm_install)"
 mkdir -p "$INSTALL_DIR"
@@ -821,13 +948,21 @@ info_msg "$(msg litellm_ready "$LITELLM_PORT")"
 # 11. OpenClaw integration info
 info_msg "$(msg openclaw_config_info)"
 info_msg "$(msg api_base "$LITELLM_PORT")"
-info_msg "$(msg openclaw_model)"
+if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]] && [[ -n "${LLM_API_KEYS["GigaChat"]:-}" ]]; then
+    info_msg "$(msg openclaw_model)"
+else
+    info_msg "$(msg model_hint)"
+fi
 
 echo "----------------------------------------"
 echo "LiteLLM install summary:"
 echo "  URL: http://localhost:${LITELLM_PORT}"
 echo "  API Base: http://localhost:${LITELLM_PORT}/openai/v1"
-echo "  Model: openclaw-brain"
+if [[ " ${SELECTED_LLMS[*]} " == *" GigaChat "* ]] && [[ -n "${LLM_API_KEYS["GigaChat"]:-}" ]]; then
+    echo "  Models: gigachat-2"
+else
+    echo "  Models: check /openai/v1/models"
+fi
 echo "----------------------------------------"
 
 # 12. Optional OpenClaw install
