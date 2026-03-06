@@ -305,7 +305,7 @@ MAX_RETRIES=3
 # Provider models (adjust if you want different defaults)
 declare -A DEFAULT_LLM_MODELS
 DEFAULT_LLM_MODELS["GigaChat"]="gigachat/GigaChat-2"
-DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-sonnet-4-5-20250929"
+DEFAULT_LLM_MODELS["Anthropic"]="anthropic/claude-sonnet-4-5"
 DEFAULT_LLM_MODELS["DeepSeek"]="deepseek/deepseek-reasoner"
 
 model_name_to_llm() {
@@ -540,13 +540,13 @@ EOF
             cat >> "$CONFIG_FILE" << EOF
   - model_name: claude-sonnet
     litellm_params:
-      model: anthropic/claude-sonnet-4-5-20250929
+      model: anthropic/claude-sonnet-4-5
       api_key: os.environ/ANTHROPIC_API_KEY
       request_timeout: 30
 
   - model_name: claude-haiku
     litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
+      model: anthropic/claude-haiku-4-5
       api_key: os.environ/ANTHROPIC_API_KEY
       request_timeout: 30
 EOF

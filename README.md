@@ -123,7 +123,7 @@ sudo /opt/litellm/install.sh --uninstall
 ## Supported LLMs
 
 *   **[GigaChat](https://developers.sber.ru/docs/ru/gigachat/models):** `gigachat/GigaChat-2` (`model_name: gigachat-2`)
-*   **[Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-sonnet-4-5-20250929` (`claude-sonnet`), `anthropic/claude-haiku-4-5-20251001` (`claude-haiku`)
+*   **[Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview):** `anthropic/claude-sonnet-4-5` (`claude-sonnet`), `anthropic/claude-haiku-4-5` (`claude-haiku`)
 *   **[DeepSeek](https://platform.deepseek.com/docs):** `deepseek/deepseek-reasoner` (`deepseek-reasoner`), `deepseek/deepseek-chat` (`deepseek-chat`)
 
 ## License
