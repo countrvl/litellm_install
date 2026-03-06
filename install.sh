@@ -634,19 +634,6 @@ EOF
         fi
     fi
 
-    cat >> "$CONFIG_FILE" << EOF
-
-cache: true
-
-cache_config:
-  type: redis
-  host: localhost
-  port: 6379
-
-cache_policy:
-  default_ttl: 3600
-EOF
-
     # Runtime env for LiteLLM (no OAuth authorization key here)
     mkdir -p "$(dirname "$ENV_FILE")"
     umask 077

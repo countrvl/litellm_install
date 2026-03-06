@@ -78,7 +78,7 @@ curl -sSL https://raw.githubusercontent.com/countrvl/litellm_install/main/instal
   - GigaChat: `gigachat-2` -> `gigachat/GigaChat-2`
   - DeepSeek: `deepseek-reasoner`, `deepseek-chat`
   - Anthropic: `claude-sonnet`, `claude-haiku`
-- всегда добавляются: `litellm_settings`, `router_settings`, `cache`, `cache_config`, `cache_policy`
+- всегда добавляются: `litellm_settings`, `router_settings`
 - fallback-правила:
   - 1 провайдер: fallback отсутствует
   - 2 провайдера: fallback от приоритетного провайдера к резервному

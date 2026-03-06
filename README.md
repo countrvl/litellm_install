@@ -78,7 +78,7 @@ Config generation is deterministic:
   - GigaChat: `gigachat-2` -> `gigachat/GigaChat-2`
   - DeepSeek: `deepseek-reasoner`, `deepseek-chat`
   - Anthropic: `claude-sonnet`, `claude-haiku`
-- always included: `litellm_settings`, `router_settings`, `cache`, `cache_config`, `cache_policy`
+- always included: `litellm_settings`, `router_settings`
 - fallback rules:
   - 1 provider: no fallback
   - 2 providers: fallbacks from primary provider to secondary provider
